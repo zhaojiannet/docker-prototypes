@@ -1,0 +1,40 @@
+services:
+  mysql:
+    image: mysql:9.7.2
+    container_name: mysql-server
+    user: "1000:1000"
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?请先在 .env 里设置}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-default_db}
+      MYSQL_USER: ${MYSQL_USER:-admin}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请先在 .env 里设置}
+
+    # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
+    # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./conf:/etc/mysql/conf.d:ro
+      - ./backups:/backups
+
+    healthcheck:
+      # 不带认证：连得上就说明服务活着，mysqladmin 此时返回 Access denied 但退出码是 0。
+      # 带 -p 会让密码明文出现在 docker inspect 的容器元数据里。
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - docker-net
+
+networks:
+  docker-net:
+    external: true
+    name: docker-net

@@ -1,0 +1,39 @@
+services:
+  valkey:
+    image: valkey/valkey:9.1.2
+    container_name: valkey-server
+    user: "1000:1000"
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      # 必须传进容器，下面 command 和 healthcheck 都要用它
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?请先在 .env 里设置}
+
+    # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
+    # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
+    ports:
+      - "127.0.0.1:${VALKEY_PORT:-6379}:6379"
+
+    volumes:
+      - ./data:/data
+      - ./conf/valkey.conf:/etc/valkey/valkey.conf:ro
+
+    # 密码从环境变量取，不写进配置文件，避免明文密码进版本库
+    command: ["sh", "-c", "exec valkey-server /etc/valkey/valkey.conf --requirepass \"$$VALKEY_PASSWORD\""]
+
+    healthcheck:
+      # 必须带密码，否则设了 requirepass 之后 ping 会返回 NOAUTH
+      test: ["CMD-SHELL", "valkey-cli --no-auth-warning -a \"$$VALKEY_PASSWORD\" ping | grep -q PONG"]
+      start_period: 20s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - docker-net
+
+networks:
+  docker-net:
+    external: true
+    name: docker-net

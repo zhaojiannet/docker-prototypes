@@ -1,0 +1,41 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_NAME:-node-app}
+    user: "1000:1000"
+    working_dir: /app
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      NODE_ENV: ${NODE_ENV:-development}
+
+      # 数据库连的是 docker-net 上那几个独立服务，密码从 .env 读
+      # DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres-server:5432/${DB_NAME}
+      # DATABASE_URL: mysql://${DB_USER}:${DB_PASSWORD}@mysql-server:3306/${DB_NAME}
+      # REDIS_URL: redis://:${VALKEY_PASSWORD}@valkey-server:6379
+
+    volumes:
+      - ./app:/app
+      # node_modules 和 pnpm 缓存放 named volume，不落到宿主机的 app 目录里。
+      # store 挂在 /app/.pnpm-store 是顺着 pnpm 自己的选择：它要求 store 和
+      # node_modules 在同一个文件系统，/app 是 bind mount 时它就把 store 放这儿
+      - app_modules:/app/node_modules
+      - pnpm_store:/app/.pnpm-store
+
+    ports:
+      - "${APP_PORT:-3000}:3000"
+
+    networks:
+      - docker-net
+
+networks:
+  docker-net:
+    external: true
+    name: docker-net
+
+volumes:
+  app_modules:
+  pnpm_store:

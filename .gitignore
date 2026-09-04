@@ -1,0 +1,15 @@
+# 凭据与数据不入库（各原型目录下还有一份同样的规则）
+.env
+*/.env
+*/data/
+*/backups/
+*.log
+.DS_Store
+
+# 数据库导出物（init-scripts 下的建表 SQL 是配置，不在此列）
+*.dump
+*.tar.gz
+*.zip
+
+# memsearch 插件在仓库目录下写的会话记忆，与本仓库内容无关
+.memsearch/

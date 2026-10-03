@@ -1,0 +1,29 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:best-practices"],
+  "timezone": "Asia/Tokyo",
+  "minimumReleaseAge": "3 days",
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^images/node/Dockerfile$/"],
+      "matchStrings": ["ARG PNPM_VERSION=(?<currentValue>[0-9.]+)"],
+      "depNameTemplate": "pnpm",
+      "datasourceTemplate": "npm"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^templates/.+/compose\\.yaml$/"],
+      "matchStrings": ["FROM (?<depName>ghcr\\.io/zhaojiannet/dev-[a-z]+):(?<currentValue>[0-9][^\\s]*)"],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "loose"
+    }
+  ],
+  "packageRules": [
+    {
+      "matchDatasources": ["docker"],
+      "matchDepNames": ["node"],
+      "allowedVersions": "/^24\\./"
+    }
+  ]
+}

@@ -13,11 +13,15 @@ ENV TZ=Asia/Tokyo \
     pnpm_config_store_dir=/home/node/.local/share/pnpm/store \
     PATH=/home/node/.local/share/pnpm/bin:$PATH
 
+# 装完 pnpm 就删掉 npm 和 corepack：pnpm 覆盖它们的全部用途（pkg、create、dlx），
+# 而官方镜像自带的 npm 随 Node 发布节奏更新，其依赖里的已知漏洞修得慢
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ca-certificates tzdata git \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g "pnpm@${PNPM_VERSION}" \
-    && npm cache clean --force
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /root/.npm
 
 COPY --chmod=755 common/fix-user.sh /usr/local/bin/fix-user
 

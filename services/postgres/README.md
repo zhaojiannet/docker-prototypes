@@ -1,13 +1,12 @@
 # PostgreSQL
 
-PostgreSQL 18.6 开发环境。数据存在本目录的 `data/postgres/18/docker/`，容器删了数据还在。
+PostgreSQL 18.6 开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。
 
 ## 启动
 
 ```bash
 cp .env.example .env
 # 改 .env 里的密码，可以用 openssl rand -base64 24 生成
-mkdir -p data/postgres          # 必须先建，否则 Docker 会以 root 建出来
 docker compose up -d --wait
 ```
 
@@ -15,7 +14,7 @@ docker compose up -d --wait
 
 - 主机 `localhost`，端口 `5432`（在 `.env` 里改 `POSTGRES_PORT`）
 - 用户名密码见 `.env`
-- 其他容器从 `docker-net` 网络连过来时，主机名用 `postgres-server`，端口 `5432`
+- 其他容器从 `dev-net` 网络连过来时，主机名用 `postgres`，端口 `5432`。网络由先起的 compose 创建，不用手动建
 
 ## 脚本
 
@@ -70,5 +69,4 @@ docker compose exec postgres psql -U postgres -d 库名 -c 'CREATE EXTENSION IF 
 
 - PG18 的数据目录层级跟 17 及以前不一样，挂载点是 `/var/lib/postgresql`，实际数据在里面的 `18/docker/`，由 compose 里的 `PGDATA` 指定。
 - `conf/postgresql.conf` 通过 `command` 里的 `config_file` 参数生效，改完要 `docker compose restart`。改之前先确认改动无误，配置写错会导致起不来，用 `docker compose logs` 看原因。
-- 日志写在 `data/postgres/18/docker/log/` 下，超过 1 天或 100MB 换一个文件。执行超过 1 秒的语句会被记下来。
-- 容器以 `1000:1000` 运行，OrbStack 会把文件属主映射成当前 Mac 用户。
+- 日志写在数据目录的 `log/` 下（容器内 `/var/lib/postgresql/18/docker/log/`），超过 1 天或 100MB 换一个文件。执行超过 1 秒的语句会被记下来。

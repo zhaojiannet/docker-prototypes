@@ -1,9 +1,10 @@
 services:
   valkey:
-    image: valkey/valkey:9.1.2
-    container_name: valkey-server
-    user: "1000:1000"
+    image: valkey/valkey:9.1.2-trixie@sha256:418652cfb58ef879d4978c33553735d7147016032d5aefaa14c828e611eb9dfd
     restart: unless-stopped
+    # 入口脚本只在第一个参数是 valkey-server 时才降权，下面的 command 以 sh 开头，
+    # 不在这里指定用户的话进程和 /data 下的文件都会是 root 的
+    user: valkey
 
     environment:
       TZ: ${TZ:-Asia/Tokyo}
@@ -11,12 +12,12 @@ services:
       VALKEY_PASSWORD: ${VALKEY_PASSWORD:?请先在 .env 里设置}
 
     # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
-    # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
+    # 容器之间走 dev-net 用服务名互连，不经过这里的端口映射，不受影响。
     ports:
       - "127.0.0.1:${VALKEY_PORT:-6379}:6379"
 
     volumes:
-      - ./data:/data
+      - data:/data
       - ./conf/valkey.conf:/etc/valkey/valkey.conf:ro
 
     # 密码从环境变量取，不写进配置文件，避免明文密码进版本库
@@ -31,9 +32,12 @@ services:
       retries: 5
 
     networks:
-      - docker-net
+      - dev-net
+
+volumes:
+  data:
 
 networks:
-  docker-net:
-    external: true
-    name: docker-net
+  # 和项目模板同名，先起的建、后起的加入
+  dev-net:
+    name: dev-net

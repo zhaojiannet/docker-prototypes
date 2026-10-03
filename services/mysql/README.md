@@ -1,13 +1,12 @@
 # MySQL
 
-MySQL 9.7.2（官方 LTS 线）开发环境。数据存在本目录的 `data/mysql/`，容器删了数据还在。
+MySQL 9.7.2（官方 lts 标签）开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。
 
 ## 启动
 
 ```bash
 cp .env.example .env
 # 改 .env 里的两个密码，可以用 openssl rand -base64 24 生成
-mkdir -p data/mysql              # 必须先建，否则 Docker 会以 root 建出来
 docker compose up -d --wait
 ```
 
@@ -17,7 +16,7 @@ docker compose up -d --wait
 
 - 主机 `localhost`，端口 `3306`（在 `.env` 里改 `MYSQL_PORT`）
 - 用户名密码见 `.env`
-- 其他容器从 `docker-net` 网络连过来时，主机名用 `mysql-server`，端口 `3306`
+- 其他容器从 `dev-net` 网络连过来时，主机名用 `mysql`，端口 `3306`。网络由先起的 compose 创建，不用手动建
 
 ## 脚本
 
@@ -53,5 +52,4 @@ docker compose exec mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" 库名 < 
 ## 说明
 
 - `conf/custom.cnf` 里的 `lower_case_table_names=1` 只在数据库首次初始化时生效。已经建过库之后再改这个值，MySQL 会拒绝启动。
-- 容器以 `1000:1000` 运行。OrbStack 会把写入的文件属主映射成当前 Mac 用户，`data/` 里的文件用 Finder 和普通命令都能正常访问。
 - 备份用的是 `--set-gtid-purged=OFF`，导出的 SQL 不带 GTID 信息，恢复到别的实例不会冲突。

@@ -1,8 +1,6 @@
 services:
   mysql:
-    image: mysql:9.7.2
-    container_name: mysql-server
-    user: "1000:1000"
+    image: mysql:9.7.2@sha256:e2bde46db6563855d7177adb5f0b57b9dc663f5a20927a90f4259d3312068497
     restart: unless-stopped
 
     environment:
@@ -13,12 +11,12 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?请先在 .env 里设置}
 
     # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
-    # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
+    # 容器之间走 dev-net 用服务名互连，不经过这里的端口映射，不受影响。
     ports:
       - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
 
     volumes:
-      - ./data/mysql:/var/lib/mysql
+      - data:/var/lib/mysql
       - ./conf:/etc/mysql/conf.d:ro
       - ./backups:/backups
 
@@ -32,9 +30,12 @@ services:
       retries: 5
 
     networks:
-      - docker-net
+      - dev-net
+
+volumes:
+  data:
 
 networks:
-  docker-net:
-    external: true
-    name: docker-net
+  # 和项目模板同名，先起的建、后起的加入
+  dev-net:
+    name: dev-net

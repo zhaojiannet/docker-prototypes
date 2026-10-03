@@ -1,6 +1,6 @@
 # MariaDB
 
-MariaDB 12.3.3（官方 latest / lts 标签）开发环境。数据存在本目录的 `data/mysql/`，容器删了数据还在。
+MariaDB 12.3.3（官方 lts 标签）开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。
 
 跟 MySQL 是两套独立的东西，端口用 3307 错开，两个可以同时跑。
 
@@ -9,7 +9,6 @@ MariaDB 12.3.3（官方 latest / lts 标签）开发环境。数据存在本目�
 ```bash
 cp .env.example .env
 # 改 .env 里的两个密码，可以用 openssl rand -base64 24 生成
-mkdir -p data/mysql              # 必须先建，否则 Docker 会以 root 建出来
 docker compose up -d --wait
 ```
 
@@ -17,7 +16,7 @@ docker compose up -d --wait
 
 - 主机 `localhost`，端口 `3307`（在 `.env` 里改 `MARIADB_PORT`）
 - 用户名密码见 `.env`
-- 其他容器从 `docker-net` 网络连过来时，主机名用 `mariadb-server`，端口 `3306`
+- 其他容器从 `dev-net` 网络连过来时，主机名用 `mariadb`，端口 `3306`。网络由先起的 compose 创建，不用手动建
 
 ## 脚本
 

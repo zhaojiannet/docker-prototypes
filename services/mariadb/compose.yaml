@@ -1,8 +1,6 @@
 services:
   mariadb:
-    image: mariadb:12.3.3
-    container_name: mariadb-server
-    user: "1000:1000"
+    image: mariadb:12.3.3@sha256:2bdff1534a7e569fecaf4b10b66ad0d410806e382d9db29ba305448addda97c4
     restart: unless-stopped
 
     environment:
@@ -13,12 +11,12 @@ services:
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:?请先在 .env 里设置}
 
     # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
-    # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
+    # 容器之间走 dev-net 用服务名互连，不经过这里的端口映射，不受影响。
     ports:
       - "127.0.0.1:${MARIADB_PORT:-3307}:3306"
 
     volumes:
-      - ./data/mysql:/var/lib/mysql
+      - data:/var/lib/mysql
       - ./conf:/etc/mysql/conf.d:ro
       - ./backups:/backups
 
@@ -31,9 +29,12 @@ services:
       retries: 5
 
     networks:
-      - docker-net
+      - dev-net
+
+volumes:
+  data:
 
 networks:
-  docker-net:
-    external: true
-    name: docker-net
+  # 和项目模板同名，先起的建、后起的加入
+  dev-net:
+    name: dev-net

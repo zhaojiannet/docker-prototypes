@@ -1,0 +1,13 @@
+# 复制到 app/ 下，和 package.json 放在一起
+
+# 新版本发布满 3 天才装
+minimumReleaseAge: 4320
+
+# 不装信任等级比之前版本低的新版本
+trustPolicy: no-downgrade
+
+# 只有列出来的包允许在安装时运行脚本，其他包的安装脚本一律拦截
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true

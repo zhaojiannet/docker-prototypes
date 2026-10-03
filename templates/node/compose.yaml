@@ -1,0 +1,39 @@
+services:
+  app:
+    build:
+      context: .
+      # 只在基础镜像上改用户的 uid、gid，让容器里写出的文件和宿主机用户同属主。
+      # Linux 上 uid 不是 1000 时在 .env 里写 PUID、PGID；Mac 上不用管。
+      dockerfile_inline: |
+        FROM ghcr.io/zhaojiannet/dev-node:24.21.0-pnpm12.8.1
+        ARG PUID
+        ARG PGID
+        USER root
+        RUN fix-user "$PUID" "$PGID"
+        USER node
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    init: true
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+    volumes:
+      - ./app:/app
+      - node_modules:/app/node_modules
+      - pnpm:/home/node/.local/share/pnpm
+    ports:
+      - "127.0.0.1:${APP_PORT:-4321}:4321"
+    networks:
+      - dev-net
+
+volumes:
+  node_modules:
+  # 所有 Node 项目共用，包只下载一次
+  pnpm:
+    name: pnpm
+
+networks:
+  # 和 services/ 下各数据库同名，先起的建、后起的加入
+  dev-net:
+    name: dev-net

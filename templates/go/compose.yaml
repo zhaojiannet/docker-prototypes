@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: .
+      # 只在基础镜像上改用户的 uid、gid，让容器里写出的文件和宿主机用户同属主。
+      # Linux 上 uid 不是 1000 时在 .env 里写 PUID、PGID；Mac 上不用管。
+      dockerfile_inline: |
+        FROM ghcr.io/zhaojiannet/dev-go:1.27.1
+        ARG PUID
+        ARG PGID
+        USER root
+        RUN fix-user "$PUID" "$PGID"
+        USER go
+      args:
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    init: true
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+    volumes:
+      - ./app:/app
+      - go-mod:/go/pkg/mod
+      - go-build:/go/cache
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    networks:
+      - dev-net
+
+volumes:
+  # 所有 Go 项目共用：模块只下载一次，编译缓存跨项目命中
+  go-mod:
+    name: go-mod
+  go-build:
+    name: go-build
+
+networks:
+  # 和 services/ 下各数据库同名，先起的建、后起的加入
+  dev-net:
+    name: dev-net

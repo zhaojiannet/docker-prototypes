@@ -4,6 +4,8 @@
 
 ## 新建项目
 
+仓库根目录的 `new-project.sh node <目录> --astro` 会把下面两节的步骤一次做完。手动做是这样：
+
 ```bash
 mkdir my-site && cd my-site
 cp -r /path/to/docker-prototypes/templates/node/. .

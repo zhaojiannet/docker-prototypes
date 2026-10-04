@@ -59,9 +59,12 @@ docker-prototypes/
     valkey/
   .github/workflows/
   renovate.json
+  new-project.sh
   docs/
   README.md
 ```
+
+`new-project.sh` 把「复制模板、写 `.env`、起容器、跑脚手架」合成一条命令，带参数直接执行，不带参数逐项问。只用 bash 和 docker，宿主机不多装东西；有参数形式是为了让 AI 代理也能调用。
 
 `images/` 是被引用的，`templates/` 是复制出去用的，`services/` 是起在本机的。三类更新节奏不同，分开放。
 
@@ -127,5 +130,5 @@ Go 镜像另有：
 - `node:24-trixie-slim`、`golang:1.27.1-trixie` 都自带 `setpriv`（util-linux）。
 - corepack 从 Node 25.0.0 起不再随 Node 分发。
 - 两个独立 compose 声明同名非 external 网络可共用，先停一个不影响另一个。
-- compose 的 `dockerfile_inline` 加 `args` 在 compose v5.1.2 可用。
+- compose 的 `dockerfile_inline` 加 `args` 在 compose v5.1.2 可用。内嵌文本里引用构建参数要写 `$$PUID`：compose 会先对整段文本做自己的变量替换，写 `$PUID` 时 `.env` 里没有这个变量就被替换成空字符串。
 - 用本机构建的镜像按模板起容器，`PUID=1234` 时容器内 `id` 为 `1234(node)`，exec 进去的命令同 uid，`pnpm add sharp` 写进共享 store，第二个项目安装时下载数为 0。

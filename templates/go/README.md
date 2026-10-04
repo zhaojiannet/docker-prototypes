@@ -4,6 +4,8 @@
 
 ## 新建项目
 
+仓库根目录的 `new-project.sh go <目录> --module <模块路径>` 会把下面两节的步骤一次做完。手动做是这样：
+
 ```bash
 mkdir my-service && cd my-service
 cp -r /path/to/docker-prototypes/templates/go/. .

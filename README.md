@@ -43,15 +43,14 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 ## 新建一个项目
 
 ```bash
-mkdir my-site && cd my-site
-cp -r /path/to/docker-prototypes/templates/node/. .
-cp .env.example .env
-mkdir app
-docker compose up -d
-docker compose exec app sh -c 'pnpm create astro@latest /tmp/site --template minimal --no-install --no-git && cp -a /tmp/site/. /app/'
+./new-project.sh node ~/Projects/my-site --astro          # Node，并在容器里生成 Astro 项目
+./new-project.sh go   ~/Projects/my-svc --module example.com/my-svc
+./new-project.sh                                          # 不带参数就逐项问
 ```
 
-命令都通过 `docker compose exec app ...` 在容器里跑。细节见各模板目录的 README。
+脚本做的事：复制模板、按目录名写 `.env`、Linux 上 uid 不是 1000 时自动填 `PUID`、`PGID`、建 `app/`、`docker compose up -d`；加 `--astro` 时在容器里跑 Astro 脚手架、放好 `pnpm-workspace.yaml`、写 `packageManager`、`pnpm install`。宿主机只需要 bash 和 Docker。
+
+之后命令都通过 `docker compose exec app ...` 在容器里跑。手动一步步做的方法见各模板目录的 README。
 
 ## 数据库
 

@@ -6,6 +6,9 @@ on:
     paths: [images/**, .github/workflows/images.yml]
   pull_request:
     paths: [images/**, .github/workflows/images.yml]
+  schedule:
+    # 每周一 09:00（Asia/Tokyo）重建：apt-get upgrade 只在构建时跑，Debian 的安全补丁要靠重建带上
+    - cron: "0 0 * * 1"
   workflow_dispatch:
 
 permissions:
@@ -35,26 +38,27 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      # 先只构建本机架构并载入，跑测试和漏洞扫描；通过了再构建双架构推送
+      # 先只构建本机架构并载入，跑测试和漏洞扫描；通过了再构建双架构推送。
+      # 不用缓存：定时重建的目的就是重新跑 apt-get upgrade，命中缓存就白跑了
       - name: 构建 node（测试用）
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: images
           file: images/node/Dockerfile
+          pull: true
+          no-cache: true
           load: true
           tags: dev-node:test
-          cache-from: type=gha,scope=node
-          cache-to: type=gha,scope=node,mode=max
 
       - name: 构建 go（测试用）
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: images
           file: images/go/Dockerfile
+          pull: true
+          no-cache: true
           load: true
           tags: dev-go:test
-          cache-from: type=gha,scope=go
-          cache-to: type=gha,scope=go,mode=max
 
       - name: 冒烟测试
         run: images/test.sh dev-node:test dev-go:test
@@ -75,15 +79,6 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
 
-      # 已推过的标签不覆写：同一标签拉到的内容必须一样
-      - name: 查标签是否已推过
-        if: github.event_name != 'pull_request'
-        id: exists
-        run: |
-          check() { docker buildx imagetools inspect "$1" >/dev/null 2>&1 && echo true || echo false; }
-          echo "node=$(check "${REGISTRY}/dev-node:${{ steps.tags.outputs.node }}")" >> "$GITHUB_OUTPUT"
-          echo "go=$(check "${REGISTRY}/dev-go:${{ steps.tags.outputs.go }}")" >> "$GITHUB_OUTPUT"
-
       - name: 登录 ghcr
         if: github.event_name != 'pull_request'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -92,26 +87,31 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 每次推两个标签：版本标签指向该版本的最新一次构建，带构建号的那个永远不动
       - name: 推送 node
-        if: github.event_name != 'pull_request' && steps.exists.outputs.node == 'false'
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: images
           file: images/node/Dockerfile
           platforms: linux/amd64,linux/arm64
+          pull: true
           push: true
-          tags: ${{ env.REGISTRY }}/dev-node:${{ steps.tags.outputs.node }}
+          tags: |
+            ${{ env.REGISTRY }}/dev-node:${{ steps.tags.outputs.node }}
+            ${{ env.REGISTRY }}/dev-node:${{ steps.tags.outputs.node }}-r${{ github.run_number }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          cache-from: type=gha,scope=node
 
       - name: 推送 go
-        if: github.event_name != 'pull_request' && steps.exists.outputs.go == 'false'
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: images
           file: images/go/Dockerfile
           platforms: linux/amd64,linux/arm64
+          pull: true
           push: true
-          tags: ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}
+          tags: |
+            ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}
+            ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}-r${{ github.run_number }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
-          cache-from: type=gha,scope=go

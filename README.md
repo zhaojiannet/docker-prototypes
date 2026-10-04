@@ -43,15 +43,15 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 - 预装 `ca-certificates`、`tzdata`、`git`，时区 `Asia/Tokyo`，普通用户 uid 1000。
 - Node 镜像装一个确定版本的 pnpm，不带 npm 和 corepack：`npx` 用 `pnpm dlx`，`npm create` 用 `pnpm create`。pnpm store 和缓存的路径已指向 `/home/node/.local/share/pnpm`，把共享 volume 挂到那里即可。
 - Go 镜像的 `GOMODCACHE`、`GOCACHE` 指向 `/go/pkg/mod`、`/go/cache`。
-- 标签只有完整版本号，没有 `latest`。推出去的标签不覆写，项目里写的标签就是实际用的环境。
+- 每次构建推两个标签。版本标签（如 `24.21.0-pnpm12.8.1`）指向这组版本的最新一次构建，Debian 安全补丁会更新到它上面；带构建号的标签（如 `24.21.0-pnpm12.8.1-r42`）永远不动，要完全钉死就用它。没有 `latest`。
 - 不装项目工具。air、sqlc 这类用 `go.mod` 的 `tool` 指令放项目里。
 
 ## 维护镜像
 
 - 版本只写在 Dockerfile 里：Node 和 Go 版本在 `FROM` 行，pnpm 版本在 `ARG PNPM_VERSION`。CI 从这两处算出标签。
-- `images/` 下有改动推到 main 时，`images.yml` 构建本机架构、跑 `images/test.sh`、Trivy 扫描，通过后构建双架构推到 ghcr.io；标签已存在就跳过。PR 上只到扫描为止，不推送。
-- `scan.yml` 在推送和 PR 时跑 gitleaks，每周一用 Trivy 扫已发布的最新标签。
-- Renovate 盯 Dockerfile 的 `FROM` 和 digest、`ARG PNPM_VERSION`、服务 compose 的镜像、模板里 `FROM ghcr.io` 的标签、工作流里的 action，有新版就开 PR，CI 绿了人工合并。
+- `images.yml` 在三种情况下跑：`images/` 下有改动推到 main、每周一定时、手动触发。每次都不用缓存从头构建，跑 `images/test.sh` 和 Trivy，通过后构建双架构推到 ghcr.io，同时更新版本标签和新增一个构建号标签。PR 上只到扫描为止，不推送。每周重建是为了把 Debian 的安全补丁带上，`apt-get upgrade` 只在构建时跑。
+- `scan.yml` 在推送和 PR 时跑 gitleaks。
+- Dependabot（GitHub 内置，配置在 `.github/dependabot.yml`）每周盯 Dockerfile 的 `FROM`、服务 compose 的镜像、工作流里的 action，新版本发布满 3 天才开 PR，CI 绿了人工合并。Node 只跟当前长期支持版的大版本。pnpm 版本和模板里引用的镜像标签它管不到，有新版手动改。
 
 ## 新建一个项目
 

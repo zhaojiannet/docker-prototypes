@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: docker
+    directories:
+      - /images/node
+      - /images/go
+    schedule:
+      interval: weekly
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3
+    ignore:
+      # Node 只跟当前长期支持版，换大版本时改这里
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker-compose
+    directories:
+      - /services/*
+    schedule:
+      interval: weekly
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3

@@ -4,17 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
-  schedule:
-    # 每周一 09:00（Asia/Tokyo），漏洞多在镜像发布之后才公开
-    - cron: "0 0 * * 1"
-  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   gitleaks:
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -23,34 +18,3 @@ jobs:
       - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  trivy:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: 算当前标签
-        id: tags
-        run: |
-          node_ver=$(sed -nE 's/^FROM node:([0-9.]+)-.*/\1/p' images/node/Dockerfile)
-          pnpm_ver=$(sed -nE 's/^ARG PNPM_VERSION=([0-9.]+).*/\1/p' images/node/Dockerfile)
-          go_ver=$(sed -nE 's/^FROM golang:([0-9.]+)-.*/\1/p' images/go/Dockerfile)
-          echo "node=ghcr.io/${{ github.repository_owner }}/dev-node:${node_ver}-pnpm${pnpm_ver}" >> "$GITHUB_OUTPUT"
-          echo "go=ghcr.io/${{ github.repository_owner }}/dev-go:${go_ver}" >> "$GITHUB_OUTPUT"
-
-      - name: 扫描 node
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ steps.tags.outputs.node }}
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"
-
-      - name: 扫描 go
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: ${{ steps.tags.outputs.go }}
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: "1"

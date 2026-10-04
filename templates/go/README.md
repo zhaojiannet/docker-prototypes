@@ -79,9 +79,11 @@ compose 把宿主机的 `APP_PORT` 映射到容器内的 8080。服务要监听 
 4. 原来在 Dockerfile 里 `go install` 的工具改成 `go get -tool`，登记进 `go.mod`。
 5. `docker compose up -d --build`，然后 `docker compose exec app go build ./...`，模块会下进共享缓存。
 
-## 换镜像版本
+## 更新镜像
 
-改 `compose.yaml` 里 `FROM` 那行的标签，然后 `docker compose up -d --build`。可用标签见仓库根 README。
+拿同版本的安全补丁：`docker compose build --pull && docker compose up -d`。版本标签每周重建一次，`--pull` 才会去拉新的，不加就用本机缓存的。
+
+换 Go 版本：改 `compose.yaml` 里 `FROM` 那行的标签，再 `docker compose up -d --build`。可用标签见仓库根 README。
 
 ## 要额外系统库时
 

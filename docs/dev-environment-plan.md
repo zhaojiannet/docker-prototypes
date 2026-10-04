@@ -24,7 +24,7 @@
 | Node 大版本 | 只出当前长期支持版 | 现在是 24；Node 26 于 2026-10-28 转为长期支持版后换 26，24 的旧标签保留 |
 | pnpm 安装 | 镜像内用 npm 装一个确定版本的 pnpm | corepack 从 Node 25 起不再随 Node 发行，不能再依赖它 |
 | pnpm 版本与项目的关系 | 项目 `package.json` 的 `packageManager` 写和镜像相同的版本 | 实测 pnpm 12 会按该字段自动下载切换版本（开关 `pmOnFail`），一致时不下载 |
-| 标签 | 只有完整版本号，如 `dev-node:24.21.0-pnpm12.8.1`、`dev-go:1.27.1`；不提供 `latest`；推出后不覆写 | 项目里写的标签就是实际用的环境，不会悄悄变 |
+| 标签 | 每次构建推两个：版本标签如 `dev-node:24.21.0-pnpm12.8.1`，指向该组版本的最新一次构建；构建号标签如 `dev-node:24.21.0-pnpm12.8.1-r42`，永不覆写。不提供 `latest` | 版本号不变的 Debian 安全补丁要能到达 ghcr，纯不覆写的标签做不到；要完全钉死的项目用构建号标签 |
 | 可见性 | 仓库和镜像都公开，放个人账号 `zhaojiannet` | 个人和公司项目都用，公开镜像任何机器免登录可拉；仓库内容已审查无凭证 |
 | 源码 | 宿主机目录 bind mount 到容器 `/app` | 编辑器和 git 在宿主机工作 |
 | node_modules | 每个项目一个 named volume，挂在 `/app/node_modules` | 不落到宿主机目录；原生模块不跨平台 |
@@ -36,8 +36,8 @@
 | 进容器方式 | 容器空转，命令全部 `docker compose exec` 执行 | 不做编辑器挂进容器，不引入 Dev Containers CLI |
 | 共享服务 | PostgreSQL、MariaDB、MySQL、Valkey 各自一个目录一个 compose，按需起 | 四种都要，但不一次全装 |
 | 共享网络 | 各 compose 都声明同名网络 `dev-net`，不标 `external` | 实测先起的建网络，后起的直接加入，先停任何一个不影响另一个；不需要手动建网络 |
-| 版本更新 | Renovate 开 PR，CI 构建验证通过后人工合并；钉 digest；新版本发布满 3 天才升 | 版本号和 digest 由它改好，人只点确认 |
-| 漏洞扫描 | Trivy 每次构建扫一次，每周再扫一次已发布的最新标签 | 漏洞多在发布之后才公开 |
+| 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；新版本发布满 3 天才升 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。它管不到 `ARG PNPM_VERSION` 和模板里 `FROM ghcr.io` 的标签，这两项手动改 |
+| 漏洞扫描 | Trivy 每次构建扫一次；镜像每周一定时重建，重建里也扫 | `apt-get upgrade` 只在构建时跑，Debian 的安全补丁要靠重建带上 |
 | 泄漏扫描 | gitleaks 跑在 CI | 仓库公开 |
 
 ## 目录
@@ -57,8 +57,7 @@ docker-prototypes/
     mariadb/
     mysql/
     valkey/
-  .github/workflows/
-  renovate.json
+  .github/        workflows/、dependabot.yml
   new-project.sh
   docs/
   README.md
@@ -111,9 +110,9 @@ Go 镜像另有：
 
 ## CI
 
-- 构建（`.github/workflows/images.yml`）：`images/` 下有改动时触发。先只构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io。标签从 Dockerfile 的 `FROM` 行和 `ARG PNPM_VERSION` 算出；已存在的标签跳过不推。PR 上只构建和测试，不推送。
-- 扫描（`.github/workflows/scan.yml`）：gitleaks 每次推送和 PR；Trivy 每周一扫已发布的最新标签，高危漏洞让工作流失败。
-- Renovate（`renovate.json`）：`config:best-practices` 预设（自带 digest 钉住），`minimumReleaseAge` 3 天，内置管理器盯 Dockerfile 的 `FROM`、services 的 compose 镜像、工作流里的 action；两个自定义规则盯 `ARG PNPM_VERSION` 和模板里的 `FROM ghcr.io/zhaojiannet/dev-*`。Node 限制在 24 大版本内，换 26 时改这条规则。
+- 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签和 `-r<运行号>` 构建号标签各一个。标签从 Dockerfile 的 `FROM` 行和 `ARG PNPM_VERSION` 算出。PR 上到扫描为止，不推送。
+- 扫描（`.github/workflows/scan.yml`）：gitleaks 每次推送和 PR。
+- Dependabot（`.github/dependabot.yml`）：每周查 `images/*` 的 Dockerfile、`services/*` 的 compose、工作流里的 action，冷却 3 天。Node 忽略大版本更新，换 26 时改这条。
 
 ## 待验证
 

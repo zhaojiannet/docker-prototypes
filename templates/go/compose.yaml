@@ -9,7 +9,7 @@ services:
         ARG PUID
         ARG PGID
         USER root
-        RUN fix-user "$PUID" "$PGID"
+        RUN fix-user "$$PUID" "$$PGID"
         USER go
       args:
         PUID: ${PUID:-1000}

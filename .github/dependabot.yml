@@ -22,6 +22,12 @@ updates:
       timezone: Asia/Tokyo
     cooldown:
       default-days: 3
+    ignore:
+      # MySQL 的 26.x、MariaDB 的 13.x 是滚动发布线，服务只跟官方 lts 标签对应的大版本
+      - dependency-name: mysql
+        update-types: ["version-update:semver-major"]
+      - dependency-name: mariadb
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /

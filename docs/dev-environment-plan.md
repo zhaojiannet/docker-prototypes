@@ -31,7 +31,7 @@
 | pnpm store 与缓存 | 所有 Node 项目共用一个 named volume，安装时从 store 复制到项目 | 实测跨 volume 硬链接报 EXDEV，同卷子目录分别挂载也一样；复制模式仍只下载一次 |
 | Go 缓存 | 模块缓存、编译缓存各一个 named volume，所有 Go 项目共用 | Go 模块缓存按内容寻址，官方设计上可共用 |
 | 构建产物 | `dist`、`.astro`、`.wrangler`、Go 二进制留在项目目录，靠 `.gitignore` | 它们不是依赖，宿主机要能看到构建结果 |
-| uid | 项目 compose 用 `dockerfile_inline` 内嵌四行构建指令，在基础镜像上按 `PUID`、`PGID` 调用镜像自带的 `fix-user` 改用户记录和挂载点属主，默认 1000 | Linux 上容器 uid 就是宿主机 uid，不一致就冲突。构建时改而不是启动时改，因为 `docker compose exec` 不经过入口脚本，启动时改需要容器以 root 运行，exec 进去的命令就都是 root。Mac 上实测 OrbStack 把 bind mount 文件一律显示为当前容器 uid，任意 uid 可写，此步在 Mac 上是空操作 |
+| uid | 项目 compose 用 `dockerfile_inline` 内嵌 `FROM` 加五行构建指令，在基础镜像上按 `PUID`、`PGID` 调用镜像自带的 `fix-user` 改用户记录和挂载点属主，默认 1000 | Linux 上容器 uid 就是宿主机 uid，不一致就冲突。构建时改而不是启动时改，因为 `docker compose exec` 不经过入口脚本，启动时改需要容器以 root 运行，exec 进去的命令就都是 root。Mac 上实测 OrbStack 把 bind mount 文件一律显示为当前容器 uid，任意 uid 可写，此步在 Mac 上是空操作 |
 | 项目引用方式 | 项目目录里只有 `compose.yaml`，基础镜像的标签写在内嵌构建指令的 `FROM` 行 | 要额外系统库的项目再换成一个独立的 Dockerfile |
 | 进容器方式 | 容器空转，命令全部 `docker compose exec` 执行 | 不做编辑器挂进容器，不引入 Dev Containers CLI |
 | 共享服务 | PostgreSQL、MariaDB、MySQL、Valkey 各自一个目录一个 compose，按需起 | 四种都要，但不一次全装 |
@@ -95,7 +95,7 @@ Go 镜像另有：
 
 `templates/node/compose.yaml` 的要点：
 
-- `build.dockerfile_inline` 内嵌四行：`FROM ghcr.io/zhaojiannet/dev-node:<完整标签>`、`USER root`、`RUN fix-user "$PUID" "$PGID"`、`USER node`，构建参数从 `.env` 读，默认 1000。`.dockerignore` 写 `*`，不把项目目录送给 daemon。
+- `build.dockerfile_inline` 内嵌 `FROM ghcr.io/zhaojiannet/dev-node:<完整标签>`，然后 `ARG PUID`、`ARG PGID`、`USER root`、`RUN fix-user "$$PUID" "$$PGID"`、`USER node` 五行，构建参数从 `.env` 读，默认 1000。`.dockerignore` 写 `*`，不把项目目录送给 daemon。
 - `./app` 挂到 `/app`；项目自己的 volume 挂 `/app/node_modules`；共享 volume 用固定名字 `pnpm`，所有项目同名，先起的建、后起的用；不标 `external`，所以 `docker compose down -v` 会把它一起删，它只是缓存。
 - `PUID`、`PGID`、`TZ`、端口从 `.env` 读。端口只绑 `127.0.0.1`。
 - 加入网络 `dev-net`，写法和 services 一致。

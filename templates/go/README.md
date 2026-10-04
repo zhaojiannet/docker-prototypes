@@ -47,7 +47,7 @@ docker compose exec app bash            # 进 shell
 | 源码 | `./app`，挂到容器 `/app` |
 | 模块缓存 | 所有 Go 项目共用的 volume `go-mod` |
 | 编译缓存 | 所有 Go 项目共用的 volume `go-build` |
-| 编出来的二进制 | `./app` 下，由项目的 `.gitignore` 忽略 |
+| 编出来的二进制 | `./app` 下，自己在 `app/.gitignore` 里忽略 |
 
 ## 删除项目
 
@@ -55,7 +55,29 @@ docker compose exec app bash            # 进 shell
 
 ## 连数据库
 
-起 `services/` 下对应的服务，容器之间用服务名连：`postgres`、`mariadb`、`mysql`、`valkey`，端口用服务自己的默认端口。网络 `dev-net` 由先起的那个 compose 创建，后起的自动加入。
+1. 起服务：`cd services/postgres && cp .env.example .env && docker compose up -d --wait`。
+2. 建库建用户：`./create-db.sh my_svc my_svc`，它会打印随机生成的密码。
+3. 把连接串写进 `app/.env`，由程序自己读（或者加进 compose 的 `environment`）。项目根目录那个 `.env` 只给 compose 用，进不了容器。
+
+```
+DATABASE_URL=postgresql://my_svc:密码@postgres:5432/my_svc
+```
+
+主机名是服务名 `postgres`，端口是容器内的 5432，不是宿主机映射的端口。MariaDB、MySQL 用 `mariadb:3306`、`mysql:3306`，Valkey 用 `redis://:密码@valkey:6379`。网络 `dev-net` 由先起的那个 compose 创建，后起的自动加入。
+
+## 容器内端口
+
+compose 把宿主机的 `APP_PORT` 映射到容器内的 8080。服务要监听 `0.0.0.0:8080`；用别的端口就把 `compose.yaml` 里 `ports` 那行冒号右边改掉。
+
+## 迁移已有项目
+
+目标目录非空时 `new-project.sh` 会退出，手动做：
+
+1. 在项目根复制模板：`cp -r /path/to/docker-prototypes/templates/go/. .`，删掉项目原有的 `Dockerfile`、`docker-compose.yml`。
+2. 源码（含 `go.mod`）放进 `app/`（原来就在根目录的话 `git mv` 进去）。
+3. `cp .env.example .env`，填 `COMPOSE_PROJECT_NAME`。
+4. 原来在 Dockerfile 里 `go install` 的工具改成 `go get -tool`，登记进 `go.mod`。
+5. `docker compose up -d --build`，然后 `docker compose exec app go build ./...`，模块会下进共享缓存。
 
 ## 换镜像版本
 

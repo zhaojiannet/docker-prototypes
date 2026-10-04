@@ -15,12 +15,20 @@
 3. **源码在宿主机，用自己的编辑器和 git。** 源码目录 bind mount 进容器，构建产物也留在源码目录里。
 4. **容器写出来的文件和宿主机用户同属主。** 项目 compose 里按 `PUID`、`PGID` 把容器用户改成宿主机用户的 uid。Mac 上不需要，Linux 上 uid 不是 1000 时填两行 `.env` 再 `docker compose up -d --build` 就行。
 
+## 起步
+
+宿主机只需要 Docker（Mac 上用 OrbStack 或 Docker Desktop 都行）和 bash。模板用到 compose 的 `dockerfile_inline`，在 Docker 29.4、Compose v5.1.2 上验证过，老版本 compose 不认这个字段。数据库目录下的脚本还会在宿主机上调用 `openssl` 生成随机密码，macOS 和主流 Linux 自带。
+
+```bash
+git clone https://github.com/zhaojiannet/docker-prototypes.git ~/Cores/Projects/docker-prototypes
+```
+
 ## 组成
 
 | 目录 | 是什么 | 怎么用 |
 |---|---|---|
 | `images/node`、`images/go` | 基础镜像的 Dockerfile，由 GitHub Actions 构建推送到 ghcr.io | 项目 compose 里 `FROM` 它 |
-| `templates/node`、`templates/go` | 新项目的起步文件：`compose.yaml`、`.env.example`、README | 复制到新项目目录 |
+| `templates/node`、`templates/go` | 新项目的起步文件：`compose.yaml`、`.env.example`、`.gitignore`、`.dockerignore`、README，Node 另有 `pnpm-workspace.yaml` | 用 `new-project.sh` 复制到新项目目录 |
 | `services/postgres`、`services/mariadb`、`services/mysql`、`services/valkey` | 一台机器一套的共享数据库，各自独立，按需起 | `cd services/postgres && docker compose up -d` |
 | `docs/` | 方案文档，记录每条决定和依据 | |
 
@@ -38,23 +46,29 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 - 标签只有完整版本号，没有 `latest`。推出去的标签不覆写，项目里写的标签就是实际用的环境。
 - 不装项目工具。air、sqlc 这类用 `go.mod` 的 `tool` 指令放项目里。
 
-版本由 Renovate 盯着，有新的稳定版就开 PR，CI 构建并跑 `images/test.sh` 通过后合并。镜像每次构建用 Trivy 扫一次，每周再扫一次最新标签。
+## 维护镜像
+
+- 版本只写在 Dockerfile 里：Node 和 Go 版本在 `FROM` 行，pnpm 版本在 `ARG PNPM_VERSION`。CI 从这两处算出标签。
+- `images/` 下有改动推到 main 时，`images.yml` 构建本机架构、跑 `images/test.sh`、Trivy 扫描，通过后构建双架构推到 ghcr.io；标签已存在就跳过。PR 上只到扫描为止，不推送。
+- `scan.yml` 在推送和 PR 时跑 gitleaks，每周一用 Trivy 扫已发布的最新标签。
+- Renovate 盯 Dockerfile 的 `FROM` 和 digest、`ARG PNPM_VERSION`、服务 compose 的镜像、模板里 `FROM ghcr.io` 的标签、工作流里的 action，有新版就开 PR，CI 绿了人工合并。
 
 ## 新建一个项目
 
 ```bash
 ./new-project.sh node ~/Projects/my-site --astro          # Node，并在容器里生成 Astro 项目
+./new-project.sh node ~/Projects/my-site --astro blog --port 4400   # 指定 Astro 模板名和宿主机端口
 ./new-project.sh go   ~/Projects/my-svc --module example.com/my-svc
 ./new-project.sh                                          # 不带参数就逐项问
 ```
 
-脚本做的事：复制模板、按目录名写 `.env`、Linux 上 uid 不是 1000 时自动填 `PUID`、`PGID`、建 `app/`、`docker compose up -d`；加 `--astro` 时在容器里跑 Astro 脚手架、放好 `pnpm-workspace.yaml`、写 `packageManager`、`pnpm install`。宿主机只需要 bash 和 Docker。
+脚本做的事：复制模板、按目录名写 `.env`、Linux 上 uid 或 gid 不是 1000 时自动填 `PUID`、`PGID`、建 `app/`、`docker compose up -d`；加 `--astro` 时在容器里跑 Astro 脚手架、放好 `pnpm-workspace.yaml`、写 `packageManager`、`pnpm install`。目标目录已存在且非空时脚本会退出，已有项目的迁法见模板 README。
 
 之后命令都通过 `docker compose exec app ...` 在容器里跑。手动一步步做的方法见各模板目录的 README。
 
 ## 数据库
 
-每种服务一个目录，各自 `cp .env.example .env` 填密码后 `docker compose up -d`。数据在 named volume 里。所有 compose 都声明同名网络 `dev-net`，先起的建、后起的加入，项目容器里用服务名（`postgres`、`mariadb`、`mysql`、`valkey`）连。
+每种服务一个目录，各自 `cp .env.example .env` 填密码后 `docker compose up -d --wait`，PostgreSQL、MariaDB、MySQL 再用目录里的 `create-db.sh` 给每个项目建库建用户，Valkey 只有一个密码。数据在 named volume 里。所有 compose 都声明同名网络 `dev-net`，先起的建、后起的加入，项目容器里用服务名（`postgres`、`mariadb`、`mysql`、`valkey`）加服务默认端口连，连接串写在项目的 `app/.env`，写法见模板 README。
 
 ## 本机验证镜像
 

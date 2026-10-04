@@ -21,8 +21,8 @@ Linux 上如果 `id -u` 不是 1000，在 `.env` 里填上 `PUID`、`PGID` 再 `
 `/app/node_modules` 已经是挂载好的 volume 目录，脚手架会把 `/app` 当成非空目录拒绝，所以先生成到临时目录再拷进来：
 
 ```bash
-docker compose exec app sh -c 'pnpm create astro@latest /tmp/site --template minimal --no-install --no-git && cp -a /tmp/site/. /app/'
-cp pnpm-workspace.yaml app/
+docker compose exec app sh -c 'pnpm create astro@latest /tmp/site --template minimal --no-install --no-git --yes && cp -a /tmp/site/. /app/ && rm -rf /tmp/site'
+mv pnpm-workspace.yaml app/
 docker compose exec app sh -c 'pnpm pkg set packageManager="pnpm@$(pnpm --version)"'
 docker compose exec app pnpm install
 ```
@@ -55,7 +55,29 @@ docker compose exec app sh                  # 进 shell
 
 ## 连数据库
 
-起 `services/` 下对应的服务，容器之间用服务名连：`postgres`、`mariadb`、`mysql`、`valkey`，端口用服务自己的默认端口。网络 `dev-net` 由先起的那个 compose 创建，后起的自动加入。
+1. 起服务：`cd services/postgres && cp .env.example .env && docker compose up -d --wait`。
+2. 建库建用户：`./create-db.sh my_site my_site`，它会打印随机生成的密码。
+3. 把连接串写进 `app/.env`（Astro 从项目根也就是 `app/` 读 `.env`）。项目根目录那个 `.env` 只给 compose 用，进不了容器。
+
+```
+DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
+```
+
+主机名是服务名 `postgres`，端口是容器内的 5432，不是宿主机映射的端口。MariaDB、MySQL 用 `mariadb:3306`、`mysql:3306`，Valkey 用 `redis://:密码@valkey:6379`。网络 `dev-net` 由先起的那个 compose 创建，后起的自动加入。
+
+## 容器内端口
+
+compose 把宿主机的 `APP_PORT` 映射到容器内的 4321，这是 Astro 开发服务器的默认端口。用别的框架时，要么让它监听 4321，要么把 `compose.yaml` 里 `ports` 那行冒号右边改成它的端口。
+
+## 迁移已有项目
+
+目标目录非空时 `new-project.sh` 会退出，手动做：
+
+1. 在项目根复制模板：`cp -r /path/to/docker-prototypes/templates/node/. .`，删掉项目原有的 `Dockerfile`、`docker-compose.yml`。
+2. 源码放进 `app/`（原来就在根目录的话 `git mv` 进去）。
+3. `cp .env.example .env`，填 `COMPOSE_PROJECT_NAME`。
+4. `mv pnpm-workspace.yaml app/`，把 `app/package.json` 的 `packageManager` 改成镜像标签里的 pnpm 版本。
+5. `docker compose up -d --build`，然后 `docker compose exec app pnpm install`。旧的 `node_modules` volume 不用管，新 volume 名字不同，装一遍就好。
 
 ## 换镜像版本
 

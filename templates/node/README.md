@@ -83,7 +83,7 @@ compose 把宿主机的 `APP_PORT` 映射到容器内的 4321，这是 Astro 开
 
 拿同版本的安全补丁：`docker compose build --pull && docker compose up -d`。版本标签每周重建一次，`--pull` 才会去拉新的，不加就用本机缓存的。
 
-换 Node 或 pnpm 版本：改 `compose.yaml` 里 `FROM` 那行的标签，再 `docker compose up -d --build`。可用标签见仓库根 README。
+换 Node 或 pnpm 版本：改 `compose.yaml` 里 `FROM` 那行的标签，再 `docker compose up -d --build`。可用标签见仓库根 README，本模板里的标签总是最新一次构建成功的那个。
 
 ## 要额外系统库时
 

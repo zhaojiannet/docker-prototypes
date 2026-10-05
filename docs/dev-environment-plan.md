@@ -36,7 +36,8 @@
 | 进容器方式 | 容器空转，命令全部 `docker compose exec` 执行 | 不做编辑器挂进容器，不引入 Dev Containers CLI |
 | 共享服务 | PostgreSQL、MariaDB、MySQL、Valkey 各自一个目录一个 compose，按需起 | 四种都要，但不一次全装 |
 | 共享网络 | 各 compose 都声明同名网络 `dev-net`，不标 `external` | 实测先起的建网络，后起的直接加入，先停任何一个不影响另一个；不需要手动建网络 |
-| 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；新版本发布满 3 天才升 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。它管不到 `ARG PNPM_VERSION` 和模板里 `FROM ghcr.io` 的标签，这两项手动改 |
+| 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；新版本发布满 3 天才升。pnpm 版本写在 `images/node/package.json` 的依赖里，由 Dependabot 的 npm 生态盯 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。Dependabot 认不出 Dockerfile 里 `ARG` 的版本号，写在 `package.json` 里它能按 npm 包处理，冷却和忽略大版本的规则照用 |
+| 模板里的镜像标签 | `images.yml` 推送成功后改 `templates/*/compose.yaml` 的 `FROM` 标签，直接提交到 main | 推送成功后标签一定存在；改的只是一个版本号，升级本身已在 Dependabot 的 PR 里人工审过。个人仓库默认不允许工作流开 PR，直接提交不用改仓库设置 |
 | 漏洞扫描 | Trivy 每次构建扫一次；镜像每周一定时重建，重建里也扫 | `apt-get upgrade` 只在构建时跑，Debian 的安全补丁要靠重建带上 |
 | 泄漏扫描 | gitleaks 跑在 CI | 仓库公开 |
 
@@ -45,7 +46,7 @@
 ```
 docker-prototypes/
   images/
-    node/        Dockerfile
+    node/        Dockerfile、package.json（只登记 pnpm 版本）
     go/          Dockerfile
     common/      fix-user.sh
     test.sh
@@ -79,7 +80,7 @@ docker-prototypes/
 
 Node 镜像另有：
 
-- `npm install -g pnpm@<ver>`，版本写在构建参数里，和标签一致。
+- `npm install -g pnpm@<ver>`，版本构建时从 `images/node/package.json` 读，和标签一致。
 - `PNPM_HOME`、`pnpm_config_store_dir`、`pnpm_config_cache_dir` 都指到 `/home/node/.local/share/pnpm` 下，共享 volume 挂这一个目录。store 必须显式指定：实测不指定时 pnpm 发现默认位置和 node_modules 不在同一文件系统，会把 store 建到 `node_modules/.pnpm-store`，共享就落空。pnpm 12 只认 `pnpm_config_*` 前缀的环境变量，`npm_config_*` 无效。
 - pnpm 自己的缓存（`pnpm_config_cache_dir`，指到 `/home/node/.local/share/pnpm/cache`）和按 `packageManager` 下载的其他版本（`PNPM_HOME` 下）也在共享 volume 里，容器重建不重新下载。
 
@@ -110,9 +111,9 @@ Go 镜像另有：
 
 ## CI
 
-- 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签和 `-r<运行号>` 构建号标签各一个。标签从 Dockerfile 的 `FROM` 行和 `ARG PNPM_VERSION` 算出。PR 上到扫描为止，不推送。
+- 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签和 `-r<运行号>` 构建号标签各一个。标签从 Dockerfile 的 `FROM` 行和 `images/node/package.json` 算出。PR 上到扫描为止，不推送。推送成功后另一个 job 把模板里的标签改成新的并提交到 main，这个 job 单独拿 `contents: write`。
 - 扫描（`.github/workflows/scan.yml`）：gitleaks 每次推送和 PR。
-- Dependabot（`.github/dependabot.yml`）：每周查 `images/*` 的 Dockerfile、`services/*` 的 compose、工作流里的 action，冷却 3 天。Node 忽略大版本更新，换 26 时改这条。
+- Dependabot（`.github/dependabot.yml`）：每周查 `images/*` 的 Dockerfile、`images/node/package.json`、`services/*` 的 compose、工作流里的 action，冷却 3 天。Node、pnpm 忽略大版本更新，换大版本时改这两条。
 
 ## 待验证
 

@@ -48,10 +48,11 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 
 ## 维护镜像
 
-- 版本只写在 Dockerfile 里：Node 和 Go 版本在 `FROM` 行，pnpm 版本在 `ARG PNPM_VERSION`。CI 从这两处算出标签。
+- 每个版本号只写在一处：Node 和 Go 版本在 Dockerfile 的 `FROM` 行，pnpm 版本在 `images/node/package.json` 的 `dependencies.pnpm`。CI 从这几处算出标签。
 - `images.yml` 在三种情况下跑：`images/` 下有改动推到 main、每周一定时、手动触发。每次都不用缓存从头构建，跑 `images/test.sh` 和 Trivy，通过后构建双架构推到 ghcr.io，同时更新版本标签和新增一个构建号标签。PR 上只到扫描为止，不推送。每周重建是为了把 Debian 的安全补丁带上，`apt-get upgrade` 只在构建时跑。
+- 推送成功后，`images.yml` 把 `templates/*/compose.yaml` 里 `FROM` 的标签改成刚推上去的，有变化就直接提交到 main。
 - `scan.yml` 在推送和 PR 时跑 gitleaks。
-- Dependabot（GitHub 内置，配置在 `.github/dependabot.yml`）每周盯 Dockerfile 的 `FROM`、服务 compose 的镜像、工作流里的 action，新版本发布满 3 天才开 PR，CI 绿了人工合并。Node 只跟当前长期支持版的大版本。pnpm 版本和模板里引用的镜像标签它管不到，有新版手动改。
+- Dependabot（GitHub 内置，配置在 `.github/dependabot.yml`）每周盯 Dockerfile 的 `FROM`、`images/node/package.json` 里的 pnpm、服务 compose 的镜像、工作流里的 action，新版本发布满 3 天才开 PR，CI 绿了人工合并。Node 只跟当前长期支持版的大版本，pnpm 只跟当前大版本。已建好的项目里的镜像标签在各自仓库，手动改。
 
 ## 新建一个项目
 

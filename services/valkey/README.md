@@ -2,7 +2,7 @@
 
 Valkey 9.1.2 开发环境。Valkey 是 Redis 改协议之后从最后一个开源版本分出来的分支，命令和协议跟 Redis 兼容，现有的 Redis 客户端库直接就能连。
 
-数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。
+数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。清理 Docker 时，`docker system prune`（加 `--volumes` 也一样）不删它；`docker volume prune -a` 会删掉所有没有容器在用的卷，容器已被删掉时这个卷也在其中。
 
 ## 启动
 

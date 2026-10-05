@@ -1,6 +1,6 @@
 # PostgreSQL
 
-PostgreSQL 18.6 开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。
+PostgreSQL 18.6 开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。清理 Docker 时，`docker system prune`（加 `--volumes` 也一样）不删它；`docker volume prune -a` 会删掉所有没有容器在用的卷，容器已被删掉时这个卷也在其中。
 
 ## 启动
 

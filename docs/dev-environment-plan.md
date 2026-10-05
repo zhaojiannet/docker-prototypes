@@ -125,6 +125,7 @@ Go 镜像另有：
 - `fix-user` 改 uid 后 bind mount 内文件属主是否正确，要在 Linux 宿主机上验；Mac 上 OrbStack 的映射让这一点验不出来。
 - QEMU 模拟 amd64 构建 Node 镜像的耗时。
 - 升级版本时重新查当天的最新稳定版，不用本文写下的数字。
+- OrbStack 图形界面里删除整个 compose 项目时，会不会连带删掉它的 named volume。文档没写。
 
 ## 已查证的事实（2026-10-03）
 
@@ -145,3 +146,5 @@ Go 镜像另有：
 - Mac 上新建、修改 bind mount 里的文件，容器内 `fs.watch` 收到事件；不开 `usePolling`，通过域名打开的页面在 Mac 上改 `.astro` 文件后自动刷新。经 https 域名的 Vite 热重载 WebSocket 握手返回 101。
 - `.env` 里写 `COMPOSE_FILE=compose.yaml:compose.ports.yaml` 时 compose 合并两个文件，不写时只读 `compose.yaml`。
 - 没有 `.env` 时，compose 用目录名作为 `${COMPOSE_PROJECT_NAME}` 的值。
+- 据 Docker CLI 文档：`docker system prune` 默认不删卷，加 `--volumes` 只删匿名卷；`docker volume prune` 默认只删匿名卷，加 `-a` 才删没有容器在用的 named volume；`docker compose down -v` 删 compose 文件 `volumes` 段声明的卷，标了 `external` 的不删。
+- 据 OrbStack 文档：named volume 存在虚拟磁盘 `~/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img` 里，Mac 上从 `~/OrbStack/docker/volumes/` 可以浏览；容器读写 volume 比 bind mount 快。

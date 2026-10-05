@@ -1,6 +1,6 @@
 # MariaDB
 
-MariaDB 12.3.3（官方 lts 标签）开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。
+MariaDB 12.3.3（官方 lts 标签）开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。清理 Docker 时，`docker system prune`（加 `--volumes` 也一样）不删它；`docker volume prune -a` 会删掉所有没有容器在用的卷，容器已被删掉时这个卷也在其中。
 
 跟 MySQL 是两套独立的东西，端口用 3307 错开，两个可以同时跑。
 

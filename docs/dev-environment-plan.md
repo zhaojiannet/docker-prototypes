@@ -147,4 +147,5 @@ Go 镜像另有：
 - `.env` 里写 `COMPOSE_FILE=compose.yaml:compose.ports.yaml` 时 compose 合并两个文件，不写时只读 `compose.yaml`。
 - 没有 `.env` 时，compose 用目录名作为 `${COMPOSE_PROJECT_NAME}` 的值。
 - 据 Docker CLI 文档：`docker system prune` 默认不删卷，加 `--volumes` 只删匿名卷；`docker volume prune` 默认只删匿名卷，加 `-a` 才删没有容器在用的 named volume；`docker compose down -v` 删 compose 文件 `volumes` 段声明的卷，标了 `external` 的不删。
+- MariaDB 12.3.3、MySQL 9.7.2、PostgreSQL 18.6 的入口脚本以 root 启动时会把数据目录里属主不对的文件改成镜像用户（uid 999）；Valkey 只在第一个参数是 `valkey-server` 时才改，本仓库的 `command` 以 `sh` 开头，不会改。
 - 据 OrbStack 文档：named volume 存在虚拟磁盘 `~/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img` 里，Mac 上从 `~/OrbStack/docker/volumes/` 可以浏览；容器读写 volume 比 bind mount 快。

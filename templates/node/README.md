@@ -44,7 +44,7 @@ docker compose exec app sh                  # 进 shell
 
 默认用 OrbStack 的域名访问，不映射宿主机端口，多个项目同时开也不会抢端口：
 
-- `https://<项目名>.orb.local`，由 compose 的标签 `dev.orbstack.domains` 指定；OrbStack 自带的 `https://app.<项目名>.orb.local` 也能用。证书 OrbStack 自动签发和安装。
+- `https://<项目名>.orb.local`，由 compose 的标签 `dev.orbstack.domains` 指定；OrbStack 自带的 `https://app.<项目名>.orb.local` 也能用。证书 OrbStack 自动签发和安装。容器里的 Node 会信任系统证书库，OrbStack 的根证书也在里面，Node 程序访问 `https://*.orb.local` 不用另外配置。
 - Vite 默认只响应 localhost 和 IP，其他主机名一律返回 403。compose 里的环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行 `.orb.local`，Astro 等基于 Vite 的框架都认，项目配置里不用再写 `allowedHosts`。
 - 热重载不用开文件轮询（`usePolling`），OrbStack 会把 Mac 上的文件改动通知到容器里。
 

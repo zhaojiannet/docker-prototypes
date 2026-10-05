@@ -1,8 +1,11 @@
 FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
 
 # store 必须显式指定：不指定时 pnpm 发现默认位置和 node_modules 不在同一文件系统，
-# 会把 store 建到 node_modules/.pnpm-store 里，共享 volume 就没用上
+# 会把 store 建到 node_modules/.pnpm-store 里，共享 volume 就没用上。
+# NODE_USE_SYSTEM_CA：OrbStack 把它的根证书加进容器的系统证书库，Node 默认只信任自带的证书、
+# 不读系统库，访问 https://*.orb.local 会报 SELF_SIGNED_CERT_IN_CHAIN。打开后系统库和自带证书一起信任
 ENV TZ=Asia/Tokyo \
+    NODE_USE_SYSTEM_CA=1 \
     LANG=C.UTF-8 \
     DEV_USER=node \
     DEV_DIRS="/app /home/node/.local/share/pnpm" \

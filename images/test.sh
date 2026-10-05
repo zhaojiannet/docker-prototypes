@@ -34,6 +34,9 @@ pass "node 默认用户、版本、store 位置"
 docker run --rm "$NODE_IMAGE" sh -c 'git --version >/dev/null && test -s /etc/ssl/certs/ca-certificates.crt' || fail "node 镜像缺 git 或 CA 证书"
 pass "node 镜像带 git 和 CA 证书"
 
+docker run --rm "$NODE_IMAGE" sh -c 'test "$NODE_USE_SYSTEM_CA" = 1' || fail "node 镜像没设 NODE_USE_SYSTEM_CA=1"
+pass "node 信任系统证书库"
+
 docker run --rm -v "${VOL_PREFIX}-nm:/app/node_modules" -v "${VOL_PREFIX}-pnpm:/home/node/.local/share/pnpm" "$NODE_IMAGE" \
 	sh -c 'touch /app/node_modules/x /home/node/.local/share/pnpm/x' || fail "node 用户写不进空 volume"
 pass "node 空 volume 首次挂载可写"

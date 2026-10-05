@@ -45,7 +45,7 @@ AOF 和 RDB 两个都开着：
 docker compose exec valkey sh -c 'valkey-cli --no-auth-warning -a "$VALKEY_PASSWORD" BGSAVE'
 ```
 
-备份：`docker compose cp valkey:/data ./backups/` 把数据目录整个拷出来，服务运行中拷也可以。
+备份：`docker compose cp valkey:/data ./backups/` 把数据目录整个拷出来，服务运行中拷也可以。`../backup-all.sh` 不处理 Valkey。
 
 ## 说明
 

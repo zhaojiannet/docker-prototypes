@@ -112,6 +112,8 @@ Go 镜像另有：
 
 每种服务一个目录，各自 `compose.yaml` 加 `.env.example`，用官方镜像，标签写完整版本号并钉 digest。MariaDB、MySQL 取官方 `lts` 标签对应的版本，不取滚动发布的 `latest`。数据放 named volume，由镜像自己的用户运行，compose 不指定 uid；Valkey 的 `command` 以 `sh` 开头、入口脚本不降权，单独写 `user: valkey`。端口只绑 `127.0.0.1`，网络声明同上。三个数据库各附建库、查权限、删库、备份脚本。
 
+备份用 `mariadb-dump`、`mysqldump`、`pg_dumpall` 导出 SQL，不拷数据目录：PostgreSQL 文档写明拷数据文件必须先停库或对整个文件系统做原子快照才可用。`services/backup-all.sh` 依次调用各目录的 `backup.sh`，不写死目录名，认同时有 `backup.sh` 和 `create-db.sh` 的目录，复制到别处、目录改名后照样能用。不建定时任务，在清理容器、升级或迁移数据库前手动跑。保留规则：`all_databases_*` 每个实例留最新 5 份，名字带 `before-` 的改动前快照按修改时间留 30 天，其他文件不动。导出文件只在本机 `backups/` 下，不另存第二份。
+
 ## CI
 
 - 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签和 `-r<运行号>` 构建号标签各一个。标签从 Dockerfile 的 `FROM` 行和 `images/node/package.json` 算出。PR 上到扫描为止，不推送。推送成功后另一个 job 把模板里的标签改成新的并提交到 main，这个 job 单独拿 `contents: write`。

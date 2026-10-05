@@ -23,6 +23,7 @@ docker compose up -d --wait
 ./delete-db.sh 库名 [用户名]        # 删库删用户，删之前自动备份到 backups/
 ./check-user.sh [用户名]            # 查角色属性和各库权限，不给用户名就列全部
 ./backup.sh [库名]                  # 备份到 backups/，不给库名就 pg_dumpall 全部
+../backup-all.sh                    # 同级几个数据库一起整库备份，并清理旧备份，规则见脚本
 ```
 
 `create-db.sh` 建出来的用户只能连自己那个库，其他库连不上，也拿不到 public schema 的默认权限。

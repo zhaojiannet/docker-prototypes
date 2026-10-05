@@ -11,6 +11,11 @@ on:
     - cron: "0 0 * * 1"
   workflow_dispatch:
 
+# 同一分支上的运行排队执行：并行时先开始的那次可能后跑完，把模板标签改回旧的
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   packages: write
@@ -21,6 +26,9 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      node: ${{ steps.tags.outputs.node }}
+      go: ${{ steps.tags.outputs.go }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -115,3 +123,28 @@ jobs:
             ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}
             ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}-r${{ github.run_number }}
           labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+  # 新标签推上去之后才改模板，新建项目不会引用一个还不存在的标签
+  templates:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+
+      - name: 更新模板里的镜像标签
+        env:
+          NODE_TAG: ${{ needs.build.outputs.node }}
+          GO_TAG: ${{ needs.build.outputs.go }}
+        run: |
+          sed -i -E "s#(FROM ghcr\.io/[^/]+/dev-node:)[^[:space:]]+#\1${NODE_TAG}#" templates/node/compose.yaml
+          sed -i -E "s#(FROM ghcr\.io/[^/]+/dev-go:)[^[:space:]]+#\1${GO_TAG}#" templates/go/compose.yaml
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -am "chore(templates): 镜像标签更新为 dev-node:${NODE_TAG}、dev-go:${GO_TAG}"
+          git push

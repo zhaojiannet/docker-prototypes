@@ -18,12 +18,15 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Asia/Tokyo}
+    # OrbStack 下用 https://<项目名>.orb.local 访问，不占宿主机端口。
+    # 要 localhost 加端口时在 .env 里启用 COMPOSE_FILE，合并 compose.ports.yaml
+    labels:
+      - dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local
+      - dev.orbstack.http-port=8080
     volumes:
       - ./app:/app
       - go-mod:/go/pkg/mod
       - go-build:/go/cache
-    ports:
-      - "127.0.0.1:${APP_PORT:-8080}:8080"
     networks:
       - dev-net
 

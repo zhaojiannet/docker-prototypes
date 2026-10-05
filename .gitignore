@@ -9,6 +9,3 @@
 *.dump
 *.tar.gz
 *.zip
-
-# memsearch 插件在仓库目录下写的会话记忆，与本仓库内容无关
-.memsearch/

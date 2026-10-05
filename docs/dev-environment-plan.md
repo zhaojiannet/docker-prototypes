@@ -38,6 +38,7 @@
 | 共享网络 | 各 compose 都声明同名网络 `dev-net`，不标 `external` | 实测先起的建网络，后起的直接加入，先停任何一个不影响另一个；不需要手动建网络 |
 | 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；新版本发布满 3 天才升。pnpm 版本写在 `images/node/package.json` 的依赖里，由 Dependabot 的 npm 生态盯 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。Dependabot 认不出 Dockerfile 里 `ARG` 的版本号，写在 `package.json` 里它能按 npm 包处理，冷却和忽略大版本的规则照用 |
 | 模板里的镜像标签 | `images.yml` 推送成功后改 `templates/*/compose.yaml` 的 `FROM` 标签，直接提交到 main | 推送成功后标签一定存在；改的只是一个版本号，升级本身已在 Dependabot 的 PR 里人工审过。个人仓库默认不允许工作流开 PR，直接提交不用改仓库设置 |
+| 访问方式 | 默认用 OrbStack 域名 `<项目名>.orb.local`，不映射端口；要端口时 `.env` 里用 `COMPOSE_FILE` 合并 `compose.ports.yaml` | 多个项目同时开不抢端口，OrbStack 自带 https。`COMPOSE_FILE` 写在 `.env` 是 compose 文档给的用法，切换只改一行；`compose.override.yaml` 会被自动读取，留给项目自己用 |
 | 漏洞扫描 | Trivy 每次构建扫一次；镜像每周一定时重建，重建里也扫 | `apt-get upgrade` 只在构建时跑，Debian 的安全补丁要靠重建带上 |
 | 泄漏扫描 | gitleaks 跑在 CI | 仓库公开 |
 
@@ -51,8 +52,8 @@ docker-prototypes/
     common/      fix-user.sh
     test.sh
   templates/
-    node/        compose.yaml、.env.example、README.md
-    go/          compose.yaml、.env.example、README.md
+    node/        compose.yaml、compose.ports.yaml、.env.example、README.md
+    go/          compose.yaml、compose.ports.yaml、.env.example、README.md
   services/
     postgres/    compose.yaml、.env.example、conf/、init-scripts/
     mariadb/
@@ -97,7 +98,9 @@ Go 镜像另有：
 
 - `build.dockerfile_inline` 内嵌 `FROM ghcr.io/zhaojiannet/dev-node:<完整标签>`，然后 `ARG PUID`、`ARG PGID`、`USER root`、`RUN fix-user "$$PUID" "$$PGID"`、`USER node` 五行，构建参数从 `.env` 读，默认 1000。`.dockerignore` 写 `*`，不把项目目录送给 daemon。
 - `./app` 挂到 `/app`；项目自己的 volume 挂 `/app/node_modules`；共享 volume 用固定名字 `pnpm`，所有项目同名，先起的建、后起的用；不标 `external`，所以 `docker compose down -v` 会把它一起删，它只是缓存。
-- `PUID`、`PGID`、`TZ`、端口从 `.env` 读。端口只绑 `127.0.0.1`。
+- `PUID`、`PGID`、`TZ` 从 `.env` 读。
+- 标签 `dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local` 给短域名，`dev.orbstack.http-port` 写明容器内端口，OrbStack 不用自己探测。环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.orb.local` 让 Vite 响应这个域名。
+- 端口映射单独放 `compose.ports.yaml`，只绑 `127.0.0.1`，`.env` 里写 `COMPOSE_FILE` 时才合并。
 - 加入网络 `dev-net`，写法和 services 一致。
 - 容器空转，`restart: unless-stopped`。
 
@@ -132,3 +135,11 @@ Go 镜像另有：
 - 两个独立 compose 声明同名非 external 网络可共用，先停一个不影响另一个。
 - compose 的 `dockerfile_inline` 加 `args` 在 compose v5.1.2 可用。内嵌文本里引用构建参数要写 `$$PUID`：compose 会先对整段文本做自己的变量替换，写 `$PUID` 时 `.env` 里没有这个变量就被替换成空字符串。
 - 用本机构建的镜像按模板起容器，`PUID=1234` 时容器内 `id` 为 `1234(node)`，exec 进去的命令同 uid，`pnpm add sharp` 写进共享 store，第二个项目安装时下载数为 0。
+
+## 已查证的事实（2026-10-05，OrbStack 2.2.3）
+
+- 不映射端口时，`https://app.<项目名>.orb.local` 和标签 `dev.orbstack.domains` 给的 `https://<项目名>.orb.local` 都能访问容器内的开发服务器，证书宿主机直接信任。
+- Astro 7.3.5 开发服务器默认对 `.orb.local` 主机名返回 403 `Blocked request`；设环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.orb.local` 后返回 200，不用改项目配置。
+- Mac 上新建、修改 bind mount 里的文件，容器内 `fs.watch` 收到事件；不开 `usePolling`，通过域名打开的页面在 Mac 上改 `.astro` 文件后自动刷新。经 https 域名的 Vite 热重载 WebSocket 握手返回 101。
+- `.env` 里写 `COMPOSE_FILE=compose.yaml:compose.ports.yaml` 时 compose 合并两个文件，不写时只读 `compose.yaml`。
+- 没有 `.env` 时，compose 用目录名作为 `${COMPOSE_PROJECT_NAME}` 的值。

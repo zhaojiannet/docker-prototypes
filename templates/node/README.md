@@ -9,7 +9,7 @@
 ```bash
 mkdir my-site && cd my-site
 cp -r /path/to/docker-prototypes/templates/node/. .
-cp .env.example .env            # 改 COMPOSE_PROJECT_NAME 和端口
+cp .env.example .env            # 改 COMPOSE_PROJECT_NAME
 mkdir app
 docker compose up -d
 ```
@@ -38,7 +38,24 @@ docker compose exec app pnpm build
 docker compose exec app sh                  # 进 shell
 ```
 
-浏览器打开 `http://localhost:4321`（端口在 `.env` 里改）。
+浏览器打开 `https://<COMPOSE_PROJECT_NAME>.orb.local`，见下一节。
+
+## 访问方式
+
+默认用 OrbStack 的域名访问，不映射宿主机端口，多个项目同时开也不会抢端口：
+
+- `https://<项目名>.orb.local`，由 compose 的标签 `dev.orbstack.domains` 指定；OrbStack 自带的 `https://app.<项目名>.orb.local` 也能用。证书 OrbStack 自动签发和安装。
+- Vite 默认只响应 localhost 和 IP，其他主机名一律返回 403。compose 里的环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行 `.orb.local`，Astro 等基于 Vite 的框架都认，项目配置里不用再写 `allowedHosts`。
+- 热重载不用开文件轮询（`usePolling`），OrbStack 会把 Mac 上的文件改动通知到容器里。
+
+不用 OrbStack（Linux、Docker Desktop），或者就要 `localhost` 加端口时，在 `.env` 里加：
+
+```
+COMPOSE_FILE=compose.yaml:compose.ports.yaml
+APP_PORT=4321
+```
+
+compose 会合并 `compose.ports.yaml`，把 `127.0.0.1:APP_PORT` 映射到容器内的 4321。改完 `docker compose up -d`。`new-project.sh` 用 `--access port` 时就是写这两行；不指定时，Docker 是 OrbStack 就用域名，否则用端口。
 
 ## 放哪
 
@@ -67,7 +84,7 @@ DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
 
 ## 容器内端口
 
-compose 把宿主机的 `APP_PORT` 映射到容器内的 4321，这是 Astro 开发服务器的默认端口。用别的框架时，要么让它监听 4321，要么把 `compose.yaml` 里 `ports` 那行冒号右边改成它的端口。
+容器内用 4321，这是 Astro 开发服务器的默认端口。用别的框架时，要么让它监听 4321，要么把 `compose.yaml` 里标签 `dev.orbstack.http-port` 和 `compose.ports.yaml` 里冒号右边都改成它的端口。
 
 ## 迁移已有项目
 

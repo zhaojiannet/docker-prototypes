@@ -28,7 +28,7 @@ git clone https://github.com/zhaojiannet/docker-prototypes.git ~/Cores/Projects/
 | 目录 | 是什么 | 怎么用 |
 |---|---|---|
 | `images/node`、`images/go` | 基础镜像的 Dockerfile，由 GitHub Actions 构建推送到 ghcr.io | 项目 compose 里 `FROM` 它 |
-| `templates/node`、`templates/go` | 新项目的起步文件：`compose.yaml`、`.env.example`、`.gitignore`、`.dockerignore`、README，Node 另有 `pnpm-workspace.yaml` | 用 `new-project.sh` 复制到新项目目录 |
+| `templates/node`、`templates/go` | 新项目的起步文件：`compose.yaml`、`compose.ports.yaml`、`.env.example`、`.gitignore`、`.dockerignore`、README，Node 另有 `pnpm-workspace.yaml` | 用 `new-project.sh` 复制到新项目目录 |
 | `services/postgres`、`services/mariadb`、`services/mysql`、`services/valkey` | 一台机器一套的共享数据库，各自独立，按需起 | `cd services/postgres && docker compose up -d` |
 | `docs/` | 方案文档，记录每条决定和依据 | |
 
@@ -58,12 +58,12 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 
 ```bash
 ./new-project.sh node ~/Projects/my-site --astro          # Node，并在容器里生成 Astro 项目
-./new-project.sh node ~/Projects/my-site --astro blog --port 4400   # 指定 Astro 模板名和宿主机端口
+./new-project.sh node ~/Projects/my-site --astro blog --access port --port 4400   # 指定 Astro 模板名，用 localhost:4400 访问
 ./new-project.sh go   ~/Projects/my-svc --module example.com/my-svc
 ./new-project.sh                                          # 不带参数就逐项问
 ```
 
-脚本做的事：复制模板、按目录名写 `.env`、Linux 上 uid 或 gid 不是 1000 时自动填 `PUID`、`PGID`、建 `app/`、`docker compose up -d`；加 `--astro` 时在容器里跑 Astro 脚手架、放好 `pnpm-workspace.yaml`、写 `packageManager`、`pnpm install`。目标目录已存在且非空时脚本会退出，已有项目的迁法见模板 README。
+脚本做的事：复制模板、按目录名写 `.env`、Linux 上 uid 或 gid 不是 1000 时自动填 `PUID`、`PGID`、建 `app/`、`docker compose up -d`。访问方式默认按 Docker 判断：OrbStack 用域名 `https://<项目名>.orb.local`，其他用 `localhost` 加端口，`--access domain|port` 可以指定。加 `--astro` 时在容器里跑 Astro 脚手架、放好 `pnpm-workspace.yaml`、写 `packageManager`、`pnpm install`。目标目录已存在且非空时脚本会退出，已有项目的迁法见模板 README。
 
 之后命令都通过 `docker compose exec app ...` 在容器里跑。手动一步步做的方法见各模板目录的 README。
 

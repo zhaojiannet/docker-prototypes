@@ -9,7 +9,7 @@
 ```bash
 mkdir my-service && cd my-service
 cp -r /path/to/docker-prototypes/templates/go/. .
-cp .env.example .env            # 改 COMPOSE_PROJECT_NAME 和端口
+cp .env.example .env            # 改 COMPOSE_PROJECT_NAME
 mkdir app
 docker compose up -d
 ```
@@ -40,6 +40,17 @@ docker compose exec app go run .        # 服务要监听 0.0.0.0，宿主机才
 docker compose exec app bash            # 进 shell
 ```
 
+## 访问方式
+
+默认用 OrbStack 的域名 `https://<项目名>.orb.local` 访问，由 compose 的标签 `dev.orbstack.domains` 指定，不映射宿主机端口。不用 OrbStack，或者就要 `localhost` 加端口时，在 `.env` 里加：
+
+```
+COMPOSE_FILE=compose.yaml:compose.ports.yaml
+APP_PORT=8080
+```
+
+compose 会合并 `compose.ports.yaml`，把 `127.0.0.1:APP_PORT` 映射到容器内的 8080。`new-project.sh` 用 `--access port` 时就是写这两行；不指定时，Docker 是 OrbStack 就用域名，否则用端口。
+
 ## 放哪
 
 | 内容 | 位置 |
@@ -67,7 +78,7 @@ DATABASE_URL=postgresql://my_svc:密码@postgres:5432/my_svc
 
 ## 容器内端口
 
-compose 把宿主机的 `APP_PORT` 映射到容器内的 8080。服务要监听 `0.0.0.0:8080`；用别的端口就把 `compose.yaml` 里 `ports` 那行冒号右边改掉。
+服务要监听 `0.0.0.0:8080`；用别的端口就把 `compose.yaml` 里标签 `dev.orbstack.http-port` 和 `compose.ports.yaml` 里冒号右边都改掉。
 
 ## 迁移已有项目
 

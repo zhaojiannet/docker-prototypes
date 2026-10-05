@@ -18,12 +18,17 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Asia/Tokyo}
+      # Vite 默认只放行 localhost 和 IP，用 OrbStack 域名访问会返回 403
+      __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: .orb.local
+    # OrbStack 下用 https://<项目名>.orb.local 访问，不占宿主机端口。
+    # 要 localhost 加端口时在 .env 里启用 COMPOSE_FILE，合并 compose.ports.yaml
+    labels:
+      - dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local
+      - dev.orbstack.http-port=4321
     volumes:
       - ./app:/app
       - node_modules:/app/node_modules
       - pnpm:/home/node/.local/share/pnpm
-    ports:
-      - "127.0.0.1:${APP_PORT:-4321}:4321"
     networks:
       - dev-net
 

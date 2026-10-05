@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 用法:
 #   new-project.sh                                         不带参数，逐项问
-#   new-project.sh node <目录> [--astro [模板名]] [--port N]
-#   new-project.sh go   <目录> [--module <模块路径>] [--port N]
+#   new-project.sh node <目录> [--astro [模板名]] [--access domain|port] [--port N]
+#   new-project.sh go   <目录> [--module <模块路径>] [--access domain|port] [--port N]
 set -euo pipefail
 
 usage() {
@@ -22,12 +22,20 @@ ask() {
 	printf -v "$__var" '%s' "$__answer"
 }
 
+orbstack=""
+if [ "$(docker info --format '{{.OperatingSystem}}' 2>/dev/null || true)" = OrbStack ]; then
+	orbstack=1
+fi
+default_access=port
+[ -z "$orbstack" ] || default_access=domain
+
 kind=${1:-}
 target=${2:-}
 if [ $# -ge 2 ]; then shift 2; else set --; fi
 
 astro=""
 module=""
+access=""
 port=""
 while [ $# -gt 0 ]; do
 	case $1 in
@@ -41,6 +49,11 @@ while [ $# -gt 0 ]; do
 	--module)
 		[ $# -gt 1 ] || usage
 		module=$2
+		shift
+		;;
+	--access)
+		[ $# -gt 1 ] || usage
+		access=$2
 		shift
 		;;
 	--port)
@@ -62,13 +75,22 @@ if [ -z "$kind" ]; then
 		if [ "$yn" = y ] || [ "$yn" = Y ]; then
 			ask astro "Astro 模板名" minimal
 		fi
-		ask port "宿主机端口" 4321
 		;;
 	go)
 		ask module "Go 模块路径（留空则不 go mod init）"
-		ask port "宿主机端口" 8080
 		;;
 	esac
+	ask access "访问方式 (domain: OrbStack 域名 / port: localhost 加端口)" "$default_access"
+	if [ "$access" = port ]; then
+		case $kind in
+		node) ask port "宿主机端口" 4321 ;;
+		go) ask port "宿主机端口" 8080 ;;
+		esac
+	fi
+fi
+
+if [ -z "$access" ]; then
+	if [ -n "$port" ]; then access=port; else access=$default_access; fi
 fi
 
 case $kind in
@@ -78,6 +100,12 @@ esac
 [ -n "$target" ] || usage
 [ -z "$astro" ] || [ "$kind" = node ] || { echo "--astro 只用于 node" >&2; exit 1; }
 [ -z "$module" ] || [ "$kind" = go ] || { echo "--module 只用于 go" >&2; exit 1; }
+case $access in
+domain | port) ;;
+*) usage ;;
+esac
+[ -z "$port" ] || [ "$access" = port ] || { echo "--port 只用于 --access port" >&2; exit 1; }
+[ "$access" = port ] || [ -n "$orbstack" ] || echo "当前 Docker 不是 OrbStack，<项目名>.orb.local 域名访问不到" >&2
 
 root=$(cd "$(dirname "$0")" && pwd)
 template="$root/templates/$kind"
@@ -99,7 +127,10 @@ mkdir -p "$target/app"
 {
 	echo "COMPOSE_PROJECT_NAME=$name"
 	echo "TZ=Asia/Tokyo"
-	[ -z "$port" ] || echo "APP_PORT=$port"
+	if [ "$access" = port ]; then
+		echo "COMPOSE_FILE=compose.yaml:compose.ports.yaml"
+		[ -z "$port" ] || echo "APP_PORT=$port"
+	fi
 	# 只有 Linux 上容器 uid 和宿主机不一致才真的冲突；Mac 的文件共享层会自动映射
 	if [ "$(uname)" = Linux ] && { [ "$(id -u)" != 1000 ] || [ "$(id -g)" != 1000 ]; }; then
 		echo "PUID=$(id -u)"
@@ -125,6 +156,15 @@ fi
 echo
 # bash 3.2 会把紧跟在变量名后的全角括号算进变量名，必须加花括号
 echo "已创建 ${target}（compose 项目 ${name}）"
+if [ "$access" = domain ]; then
+	url="https://${name}.orb.local"
+else
+	case $kind in
+	node) url="http://localhost:${port:-4321}" ;;
+	go) url="http://localhost:${port:-8080}" ;;
+	esac
+fi
+echo "  访问地址 ${url}（开发服务器启动后）"
 case $kind in
 node)
 	if [ -n "$astro" ]; then

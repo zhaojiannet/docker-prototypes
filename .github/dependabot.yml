@@ -14,6 +14,19 @@ updates:
       - dependency-name: node
         update-types: ["version-update:semver-major"]
 
+  # images/node/package.json 只登记镜像里装的 pnpm 版本
+  - package-ecosystem: npm
+    directory: /images/node
+    schedule:
+      interval: weekly
+      timezone: Asia/Tokyo
+    cooldown:
+      default-days: 3
+    ignore:
+      # pnpm 只跟当前大版本，换大版本时改这里
+      - dependency-name: pnpm
+        update-types: ["version-update:semver-major"]
+
   - package-ecosystem: docker-compose
     directories:
       - /services/*

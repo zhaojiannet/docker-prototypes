@@ -24,12 +24,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # 标签从 Dockerfile 里算出来，版本号只写在 Dockerfile 一处
+      # 标签从构建用的文件里算出来，每个版本号只写在一处
       - name: 算标签
         id: tags
         run: |
           node_ver=$(sed -nE 's/^FROM node:([0-9.]+)-.*/\1/p' images/node/Dockerfile)
-          pnpm_ver=$(sed -nE 's/^ARG PNPM_VERSION=([0-9.]+).*/\1/p' images/node/Dockerfile)
+          pnpm_ver=$(jq -r '.dependencies.pnpm // empty' images/node/package.json)
           go_ver=$(sed -nE 's/^FROM golang:([0-9.]+)-.*/\1/p' images/go/Dockerfile)
           test -n "$node_ver" && test -n "$pnpm_ver" && test -n "$go_ver"
           echo "node=${node_ver}-pnpm${pnpm_ver}" >> "$GITHUB_OUTPUT"

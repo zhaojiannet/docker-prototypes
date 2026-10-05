@@ -5,7 +5,7 @@ services:
       # 只在基础镜像上改用户的 uid、gid，让容器里写出的文件和宿主机用户同属主。
       # Linux 上 uid 不是 1000 时在 .env 里写 PUID、PGID；Mac 上不用管。
       dockerfile_inline: |
-        FROM ghcr.io/zhaojiannet/dev-node:24.21.0-pnpm12.8.1
+        FROM ghcr.io/zhaojiannet/dev-node:24.21.0-pnpm12.8.2
         ARG PUID
         ARG PGID
         USER root

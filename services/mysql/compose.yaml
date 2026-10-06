@@ -1,6 +1,8 @@
 services:
   mysql:
     image: mysql:9.7.2@sha256:e2bde46db6563855d7177adb5f0b57b9dc663f5a20927a90f4259d3312068497
+    # 一台机器只跑一个，容器名固定成服务名：连库的主机名、docker exec、看日志都用同一个名字
+    container_name: mysql
     restart: unless-stopped
 
     environment:

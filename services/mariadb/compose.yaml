@@ -1,6 +1,8 @@
 services:
   mariadb:
     image: mariadb:12.3.3@sha256:2bdff1534a7e569fecaf4b10b66ad0d410806e382d9db29ba305448addda97c4
+    # 一台机器只跑一个，容器名固定成服务名：连库的主机名、docker exec、看日志都用同一个名字
+    container_name: mariadb
     restart: unless-stopped
 
     environment:

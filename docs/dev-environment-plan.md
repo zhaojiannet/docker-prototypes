@@ -110,7 +110,7 @@ Go 镜像另有：
 
 ## 共享服务
 
-每种服务一个目录，各自 `compose.yaml` 加 `.env.example`，用官方镜像，标签写完整版本号并钉 digest。MariaDB、MySQL 取官方 `lts` 标签对应的版本，不取滚动发布的 `latest`。数据放 named volume，标 `external` 并用固定名字 `<服务>-data`，由镜像自己的用户运行，compose 不指定 uid；Valkey 的 `command` 以 `sh` 开头、入口脚本不降权，单独写 `user: valkey`。端口只绑 `127.0.0.1`，网络声明同上。三个数据库各附建库、查权限、删库、备份脚本。
+每种服务一个目录，各自 `compose.yaml` 加 `.env.example`，用官方镜像，标签写完整版本号并钉 digest。MariaDB、MySQL 取官方 `lts` 标签对应的版本，不取滚动发布的 `latest`。容器名用 `container_name` 固定成服务名（`mariadb`、`mysql`、`postgres`、`valkey`），连库的主机名、`docker exec`、看日志都用同一个名字；一台机器只跑一个实例，compose 文档说明指定 `container_name` 后服务不能扩成多个容器，这里正好不需要。DDEV 也自己定容器名（`ddev-<项目>-db`）。数据放 named volume，标 `external` 并用固定名字 `<服务>-data`，由镜像自己的用户运行，compose 不指定 uid；Valkey 的 `command` 以 `sh` 开头、入口脚本不降权，单独写 `user: valkey`。端口只绑 `127.0.0.1`，网络声明同上。三个数据库各附建库、查权限、删库、备份脚本。
 
 数据卷标 `external` 照 DDEV 的做法：DDEV 的数据库卷是 `external` 加固定名字，删数据只走单独的 `ddev delete`。DDEV、Lando、Supabase CLI、Laravel Sail 的数据库数据都放 named volume；Dev Containers 官方模板 13 个带数据库的有 12 个、awesome-compose 20 个带数据库的样例有 14 个用 named volume，其余不持久化，都没有 bind mount 数据目录的。`external` 后 compose 的命令都删不到数据，剩下能删的只有 `docker volume rm` 和没有容器挂载时的 `docker volume prune -a`，这一层靠备份。代价是第一次要手动 `docker volume create`，卷不存在时 `up` 直接报错。
 

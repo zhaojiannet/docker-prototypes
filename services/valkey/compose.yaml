@@ -35,7 +35,10 @@ services:
       - dev-net
 
 volumes:
+  # external：compose 不建也不删这个卷，`down -v` 删不到数据；第一次 up 之前先 `docker volume create valkey-data`
   data:
+    external: true
+    name: valkey-data
 
 networks:
   # 和项目模板同名，先起的建、后起的加入

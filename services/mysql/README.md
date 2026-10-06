@@ -1,12 +1,13 @@
 # MySQL
 
-MySQL 9.7.2（官方 lts 标签）开发环境。数据在 named volume 里，`docker compose down` 不会删，`down -v` 才会。清理 Docker 时，`docker system prune`（加 `--volumes` 也一样）不删它；`docker volume prune -a` 会删掉所有没有容器在用的卷，容器已被删掉时这个卷也在其中。
+MySQL 9.7.2（官方 lts 标签）开发环境。数据在 named volume `mysql-data` 里，标了 `external`，compose 的任何命令（包括 `down -v`）都不会删它，`docker system prune` 加不加 `--volumes` 也删不到。会删数据的只有 `docker volume rm mysql-data`，以及容器已被删掉时的 `docker volume prune -a`，这两条不要用。
 
 ## 启动
 
 ```bash
 cp .env.example .env
 # 改 .env 里的两个密码，可以用 openssl rand -base64 24 生成
+docker volume create mysql-data     # 只在第一次需要，卷已存在时什么也不做
 docker compose up -d --wait
 ```
 

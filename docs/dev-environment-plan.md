@@ -110,7 +110,9 @@ Go 镜像另有：
 
 ## 共享服务
 
-每种服务一个目录，各自 `compose.yaml` 加 `.env.example`，用官方镜像，标签写完整版本号并钉 digest。MariaDB、MySQL 取官方 `lts` 标签对应的版本，不取滚动发布的 `latest`。数据放 named volume，由镜像自己的用户运行，compose 不指定 uid；Valkey 的 `command` 以 `sh` 开头、入口脚本不降权，单独写 `user: valkey`。端口只绑 `127.0.0.1`，网络声明同上。三个数据库各附建库、查权限、删库、备份脚本。
+每种服务一个目录，各自 `compose.yaml` 加 `.env.example`，用官方镜像，标签写完整版本号并钉 digest。MariaDB、MySQL 取官方 `lts` 标签对应的版本，不取滚动发布的 `latest`。数据放 named volume，标 `external` 并用固定名字 `<服务>-data`，由镜像自己的用户运行，compose 不指定 uid；Valkey 的 `command` 以 `sh` 开头、入口脚本不降权，单独写 `user: valkey`。端口只绑 `127.0.0.1`，网络声明同上。三个数据库各附建库、查权限、删库、备份脚本。
+
+数据卷标 `external` 照 DDEV 的做法：DDEV 的数据库卷是 `external` 加固定名字，删数据只走单独的 `ddev delete`。DDEV、Lando、Supabase CLI、Laravel Sail 的数据库数据都放 named volume；Dev Containers 官方模板 13 个带数据库的有 12 个、awesome-compose 20 个带数据库的样例有 14 个用 named volume，其余不持久化，都没有 bind mount 数据目录的。`external` 后 compose 的命令都删不到数据，剩下能删的只有 `docker volume rm` 和没有容器挂载时的 `docker volume prune -a`，这一层靠备份。代价是第一次要手动 `docker volume create`，卷不存在时 `up` 直接报错。
 
 备份用 `mariadb-dump`、`mysqldump`、`pg_dumpall` 导出 SQL，不拷数据目录：PostgreSQL 文档写明拷数据文件必须先停库或对整个文件系统做原子快照才可用。`services/backup-all.sh` 依次调用各目录的 `backup.sh`，不写死目录名，认同时有 `backup.sh` 和 `create-db.sh` 的目录，复制到别处、目录改名后照样能用。不建定时任务，在清理容器、升级或迁移数据库前手动跑。保留规则：`all_databases_*` 每个实例留最新 5 份，名字带 `before-` 的改动前快照按修改时间留 30 天，其他文件不动。导出文件只在本机 `backups/` 下，不另存第二份。
 
@@ -149,3 +151,10 @@ Go 镜像另有：
 - 据 Docker CLI 文档：`docker system prune` 默认不删卷，加 `--volumes` 只删匿名卷；`docker volume prune` 默认只删匿名卷，加 `-a` 才删没有容器在用的 named volume；`docker compose down -v` 删 compose 文件 `volumes` 段声明的卷，标了 `external` 的不删。
 - MariaDB 12.3.3、MySQL 9.7.2、PostgreSQL 18.6 的入口脚本以 root 启动时会把数据目录里属主不对的文件改成镜像用户（uid 999）；Valkey 只在第一个参数是 `valkey-server` 时才改，本仓库的 `command` 以 `sh` 开头，不会改。
 - 据 OrbStack 文档：named volume 存在虚拟磁盘 `~/Library/Group Containers/HUAQ24HBR6.dev.orbstack/data/data.img` 里，Mac 上从 `~/OrbStack/docker/volumes/` 可以浏览；容器读写 volume 比 bind mount 快。
+
+## 已查证的事实（2026-10-06，compose 5.1.2）
+
+- 一个项目建的卷，另一个项目用 `external: true` 加 `name:` 能挂上，两边的 `down -v` 都不删它；只写 `name:` 不写 `external` 时 compose 警告 `already exists but was created for project ...`，之后 `down -v` 会删掉它。卷的标签 `com.docker.compose.project` 建好后不变。
+- `docker volume prune -a` 只看有没有容器挂载这个卷，已停止的容器也算；挂载它的容器被删掉后，即使别的容器还在通过网络连这个数据库，卷照样被删。
+- `docker volume create` 对已存在的卷返回 0，卷里的数据不变。
+- DDEV（`pkg/ddevapp/app_compose_template.yaml`）的数据库卷是 `external`、名字为 `<项目名>-mariadb` 或 `-postgres`；`ddev stop` 不删数据，`ddev delete` 删前要确认并默认先快照。Laravel Sail 的 stub 里数据库卷不是 `external`，`down -v` 会删。

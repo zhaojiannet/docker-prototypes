@@ -35,7 +35,7 @@
 | 项目引用方式 | 项目目录里只有 `compose.yaml`，基础镜像的标签写在内嵌构建指令的 `FROM` 行 | 要额外系统库的项目再换成一个独立的 Dockerfile |
 | 进容器方式 | 容器空转，命令全部 `docker compose exec` 执行 | 不做编辑器挂进容器，不引入 Dev Containers CLI |
 | 共享服务 | PostgreSQL、MariaDB、MySQL、Valkey 各自一个目录一个 compose，按需起 | 四种都要，但不一次全装 |
-| 共享网络 | 各 compose 都声明同名网络 `dev-net`，不标 `external` | 实测先起的建网络，后起的直接加入，先停任何一个不影响另一个；不需要手动建网络 |
+| 共享网络 | 各 compose 都连外部网络 `docker-net`，标 `external`，本机第一次用前手动建一次 | 不标 `external` 时后起的项目会收到 compose 的警告（网络不是本项目建的，应设 `external: true`），网络归第一个起的项目，最后一个项目 `down` 也删不掉它；规则和数据卷一致 |
 | 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；新版本发布满 3 天才升。pnpm 版本写在 `images/node/package.json` 的依赖里，由 Dependabot 的 npm 生态盯 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。Dependabot 认不出 Dockerfile 里 `ARG` 的版本号，写在 `package.json` 里它能按 npm 包处理，冷却和忽略大版本的规则照用 |
 | 模板里的镜像标签 | `images.yml` 推送成功后改 `templates/*/compose.yaml` 的 `FROM` 标签，直接提交到 main | 推送成功后标签一定存在；改的只是一个版本号，升级本身已在 Dependabot 的 PR 里人工审过。个人仓库默认不允许工作流开 PR，直接提交不用改仓库设置 |
 | 访问方式 | 默认用 OrbStack 域名 `<项目名>.orb.local`，不映射端口；要端口时 `.env` 里用 `COMPOSE_FILE` 合并 `compose.ports.yaml` | 多个项目同时开不抢端口，OrbStack 自带 https。`COMPOSE_FILE` 写在 `.env` 是 compose 文档给的用法，切换只改一行；`compose.override.yaml` 会被自动读取，留给项目自己用 |
@@ -101,7 +101,7 @@ Go 镜像另有：
 - `PUID`、`PGID`、`TZ` 从 `.env` 读。
 - 标签 `dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local` 给短域名，`dev.orbstack.http-port` 写明容器内端口，OrbStack 不用自己探测。环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.orb.local` 让 Vite 响应这个域名。
 - 端口映射单独放 `compose.ports.yaml`，只绑 `127.0.0.1`，`.env` 里写 `COMPOSE_FILE` 时才合并。
-- 加入网络 `dev-net`，写法和 services 一致。
+- 加入网络 `docker-net`，写法和 services 一致；`new-project.sh` 在网络不存在时先建。
 - 容器空转，`restart: unless-stopped`。
 
 项目里要配的 pnpm 设置写在 `pnpm-workspace.yaml`：允许运行安装脚本的包白名单（pnpm 12 默认拦截 esbuild、workerd 这类包的安装脚本，实测会报 `ERR_PNPM_IGNORED_BUILDS`）、新版本发布满 3 天才装、不装信任等级降低的版本。
@@ -156,5 +156,6 @@ Go 镜像另有：
 
 - 一个项目建的卷，另一个项目用 `external: true` 加 `name:` 能挂上，两边的 `down -v` 都不删它；只写 `name:` 不写 `external` 时 compose 警告 `already exists but was created for project ...`，之后 `down -v` 会删掉它。卷的标签 `com.docker.compose.project` 建好后不变。
 - `docker volume prune -a` 只看有没有容器挂载这个卷，已停止的容器也算；挂载它的容器被删掉后，即使别的容器还在通过网络连这个数据库，卷照样被删。
-- `docker volume create` 对已存在的卷返回 0，卷里的数据不变。
+- `docker volume create` 对已存在的卷返回 0，卷里的数据不变；`docker network create` 对已存在的网络报 `already exists` 并返回 1，所以文档写成先 `inspect` 再建。
+- 两个项目声明同名网络、都不标 `external` 时，后起的项目 `up` 收到警告 `a network with name ... exists but was not created for project ...  Set external: true to use an existing network`；网络带先起项目的标签，先起的项目 `down` 时报 `Resource is still in use` 并留下网络，最后一个项目 `down` 也不删它。标 `external` 时网络不存在 `up` 报 `declared as external, but could not be found`，`down` 不删网络。
 - DDEV（`pkg/ddevapp/app_compose_template.yaml`）的数据库卷是 `external`、名字为 `<项目名>-mariadb` 或 `-postgres`；`ddev stop` 不删数据，`ddev delete` 删前要确认并默认先快照。Laravel Sail 的 stub 里数据库卷不是 `external`，`down -v` 会删。

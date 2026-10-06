@@ -30,7 +30,7 @@ services:
       - node_modules:/app/node_modules
       - pnpm:/home/node/.local/share/pnpm
     networks:
-      - dev-net
+      - docker-net
 
 volumes:
   node_modules:
@@ -39,6 +39,7 @@ volumes:
     name: pnpm
 
 networks:
-  # 和 services/ 下各数据库同名，先起的建、后起的加入
-  dev-net:
-    name: dev-net
+  # 所有项目和数据库共用。external：compose 不建也不删，第一次用前先 `docker network create docker-net`
+  docker-net:
+    external: true
+    name: docker-net

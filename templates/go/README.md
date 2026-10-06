@@ -11,6 +11,7 @@ mkdir my-service && cd my-service
 cp -r /path/to/docker-prototypes/templates/go/. .
 cp .env.example .env            # 改 COMPOSE_PROJECT_NAME
 mkdir app
+docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
 docker compose up -d
 ```
 
@@ -74,7 +75,7 @@ compose 会合并 `compose.ports.yaml`，把 `127.0.0.1:APP_PORT` 映射到容�
 DATABASE_URL=postgresql://my_svc:密码@postgres:5432/my_svc
 ```
 
-主机名是服务名 `postgres`，端口是容器内的 5432，不是宿主机映射的端口。MariaDB、MySQL 用 `mariadb:3306`、`mysql:3306`，Valkey 用 `redis://:密码@valkey:6379`。网络 `dev-net` 由先起的那个 compose 创建，后起的自动加入。
+主机名是服务名 `postgres`，端口是容器内的 5432，不是宿主机映射的端口。MariaDB、MySQL 用 `mariadb:3306`、`mysql:3306`，Valkey 用 `redis://:密码@valkey:6379`。网络 `docker-net` 标了 `external`，本机第一次用前要先建，`new-project.sh` 会自动建。
 
 ## 容器内端口
 

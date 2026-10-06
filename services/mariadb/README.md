@@ -9,6 +9,7 @@ MariaDB 12.3.3（官方 lts 标签）开发环境。数据在 named volume `mari
 ```bash
 cp .env.example .env
 # 改 .env 里的两个密码，可以用 openssl rand -base64 24 生成
+docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
 docker volume create mariadb-data     # 只在第一次需要，卷已存在时什么也不做
 docker compose up -d --wait
 ```
@@ -17,7 +18,7 @@ docker compose up -d --wait
 
 - 主机 `localhost`，端口 `3307`（在 `.env` 里改 `MARIADB_PORT`）
 - 用户名密码见 `.env`
-- 其他容器从 `dev-net` 网络连过来时，主机名用 `mariadb`，端口 `3306`。网络由先起的 compose 创建，不用手动建
+- 其他容器从 `docker-net` 网络连过来时，主机名用 `mariadb`，端口 `3306`
 
 ## 脚本
 

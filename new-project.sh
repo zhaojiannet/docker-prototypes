@@ -139,6 +139,8 @@ mkdir -p "$target/app"
 } > "$target/.env"
 
 cd "$target"
+# 网络是 external，compose 不会自己建
+docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net >/dev/null
 docker compose up -d
 
 if [ -n "$astro" ]; then

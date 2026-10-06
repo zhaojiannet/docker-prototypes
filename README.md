@@ -69,7 +69,7 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 
 ## 数据库
 
-每种服务一个目录，各自 `cp .env.example .env` 填密码后 `docker compose up -d --wait`，PostgreSQL、MariaDB、MySQL 再用目录里的 `create-db.sh` 给每个项目建库建用户，Valkey 只有一个密码。数据在 named volume `<服务>-data` 里，标了 `external`，第一次 `up` 之前先 `docker volume create`，见各目录 README。所有 compose 都声明同名网络 `dev-net`，先起的建、后起的加入，项目容器里用服务名（`postgres`、`mariadb`、`mysql`、`valkey`）加服务默认端口连，连接串写在项目的 `app/.env`，写法见模板 README。
+每种服务一个目录，各自 `cp .env.example .env` 填密码后 `docker compose up -d --wait`，PostgreSQL、MariaDB、MySQL 再用目录里的 `create-db.sh` 给每个项目建库建用户，Valkey 只有一个密码。数据在 named volume `<服务>-data` 里，标了 `external`，第一次 `up` 之前先 `docker volume create`，见各目录 README。所有 compose 都连外部网络 `docker-net`，本机第一次用前先 `docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net`，项目容器里用服务名（`postgres`、`mariadb`、`mysql`、`valkey`）加服务默认端口连，连接串写在项目的 `app/.env`，写法见模板 README。
 
 `services/backup-all.sh` 依次调用各目录的 `backup.sh` 做整库备份，没在运行的实例临时启动、备份完再停掉。备份后清理旧文件：`all_databases_*` 每个实例留最新 5 份，名字带 `before-` 的手动快照留 30 天，其他文件不动。导出文件只在本机，清理容器、升级或迁移数据库前跑一次。
 

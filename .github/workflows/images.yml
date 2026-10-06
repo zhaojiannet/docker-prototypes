@@ -29,19 +29,29 @@ jobs:
     outputs:
       node: ${{ steps.tags.outputs.node }}
       go: ${{ steps.tags.outputs.go }}
+      node_digest: ${{ steps.digests.outputs.node }}
+      go_digest: ${{ steps.digests.outputs.go }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # 标签从构建用的文件里算出来，每个版本号只写在一处
+      # 标签从构建用的文件里算出来，每个版本号只写在一处。
+      # 格式照 Docker Hardened Images：<运行时版本>-<Debian 代号>-dev，-dev 表示带 shell、包管理器的开发/构建变体。
+      # pnpm 版本不进标签：项目实际用的版本由 package.json 的 packageManager 决定，记在镜像描述里
       - name: 算标签
         id: tags
         run: |
           node_ver=$(sed -nE 's/^FROM node:([0-9.]+)-.*/\1/p' images/node/Dockerfile)
+          node_os=$(sed -nE 's/^FROM node:[0-9.]+-([a-z]+).*/\1/p' images/node/Dockerfile)
           pnpm_ver=$(jq -r '.dependencies.pnpm // empty' images/node/package.json)
           go_ver=$(sed -nE 's/^FROM golang:([0-9.]+)-.*/\1/p' images/go/Dockerfile)
-          test -n "$node_ver" && test -n "$pnpm_ver" && test -n "$go_ver"
-          echo "node=${node_ver}-pnpm${pnpm_ver}" >> "$GITHUB_OUTPUT"
-          echo "go=${go_ver}" >> "$GITHUB_OUTPUT"
+          go_os=$(sed -nE 's/^FROM golang:[0-9.]+-([a-z]+).*/\1/p' images/go/Dockerfile)
+          test -n "$node_ver" && test -n "$node_os" && test -n "$pnpm_ver" && test -n "$go_ver" && test -n "$go_os"
+          {
+            echo "node=${node_ver}-${node_os}-dev"
+            echo "node_desc=Node.js ${node_ver} + pnpm ${pnpm_ver}，Debian ${node_os}，开发和构建用"
+            echo "go=${go_ver}-${go_os}-dev"
+            echo "go_desc=Go ${go_ver}，Debian ${go_os}，开发和构建用"
+          } >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -56,7 +66,7 @@ jobs:
           pull: true
           no-cache: true
           load: true
-          tags: dev-node:test
+          tags: local/node:test
 
       - name: 构建 go（测试用）
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -66,15 +76,15 @@ jobs:
           pull: true
           no-cache: true
           load: true
-          tags: dev-go:test
+          tags: local/golang:test
 
       - name: 冒烟测试
-        run: images/test.sh dev-node:test dev-go:test
+        run: images/test.sh local/node:test local/golang:test
 
       - name: 扫描 node
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: dev-node:test
+          image-ref: local/node:test
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
@@ -82,7 +92,7 @@ jobs:
       - name: 扫描 go
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: dev-go:test
+          image-ref: local/golang:test
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: "1"
@@ -95,7 +105,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 每次推两个标签：版本标签指向该版本的最新一次构建，带构建号的那个永远不动
+      # 版本标签指向这组版本的最新一次构建，每周重建会更新它；要钉死就用 digest，模板里写的就是标签加 digest
       - name: 推送 node
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -105,10 +115,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           pull: true
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/dev-node:${{ steps.tags.outputs.node }}
-            ${{ env.REGISTRY }}/dev-node:${{ steps.tags.outputs.node }}-r${{ github.run_number }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          tags: ${{ env.REGISTRY }}/node:${{ steps.tags.outputs.node }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=${{ steps.tags.outputs.node_desc }}
 
       - name: 推送 go
         if: github.event_name != 'pull_request'
@@ -119,10 +129,25 @@ jobs:
           platforms: linux/amd64,linux/arm64
           pull: true
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}
-            ${{ env.REGISTRY }}/dev-go:${{ steps.tags.outputs.go }}-r${{ github.run_number }}
-          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          tags: ${{ env.REGISTRY }}/golang:${{ steps.tags.outputs.go }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=${{ steps.tags.outputs.go_desc }}
+
+      # 查版本标签当前指向的多架构索引 digest，模板钉这个，amd64、arm64 都能用
+      - name: 查 digest
+        if: github.event_name != 'pull_request'
+        id: digests
+        env:
+          NODE_REF: ${{ env.REGISTRY }}/node:${{ steps.tags.outputs.node }}
+          GO_REF: ${{ env.REGISTRY }}/golang:${{ steps.tags.outputs.go }}
+        run: |
+          for name in node go; do
+            ref=$NODE_REF; [ $name = go ] && ref=$GO_REF
+            digest=$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' | jq -r .digest)
+            case $digest in sha256:*) ;; *) echo "取不到 $ref 的 digest" >&2; exit 1;; esac
+            echo "$name=$digest" >> "$GITHUB_OUTPUT"
+          done
 
   # 新标签推上去之后才改模板，新建项目不会引用一个还不存在的标签
   templates:
@@ -136,15 +161,15 @@ jobs:
         with:
           ref: main
 
-      - name: 更新模板里的镜像标签
+      - name: 更新模板里的镜像
         env:
-          NODE_TAG: ${{ needs.build.outputs.node }}
-          GO_TAG: ${{ needs.build.outputs.go }}
+          NODE_IMAGE: ${{ needs.build.outputs.node }}@${{ needs.build.outputs.node_digest }}
+          GO_IMAGE: ${{ needs.build.outputs.go }}@${{ needs.build.outputs.go_digest }}
         run: |
-          sed -i -E "s#(FROM ghcr\.io/[^/]+/dev-node:)[^[:space:]]+#\1${NODE_TAG}#" templates/node/compose.yaml
-          sed -i -E "s#(FROM ghcr\.io/[^/]+/dev-go:)[^[:space:]]+#\1${GO_TAG}#" templates/go/compose.yaml
+          sed -i -E "s#(FROM ghcr\.io/[^/]+/node:)[^[:space:]]+#\1${NODE_IMAGE}#" templates/node/compose.yaml
+          sed -i -E "s#(FROM ghcr\.io/[^/]+/golang:)[^[:space:]]+#\1${GO_IMAGE}#" templates/go/compose.yaml
           if git diff --quiet; then exit 0; fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -am "chore(templates): 镜像标签更新为 dev-node:${NODE_TAG}、dev-go:${GO_TAG}"
+          git commit -am "chore(templates): 镜像更新为 node:${NODE_IMAGE%%@*}、golang:${GO_IMAGE%%@*}"
           git push

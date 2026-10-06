@@ -20,11 +20,12 @@
 | 支持的机器 | macOS（OrbStack）和 Linux；镜像出 `linux/arm64` 和 `linux/amd64` | 本机是 arm64 Mac，CI 和服务器是 amd64 Linux |
 | 使用者 | 本人和 AI 代理为主；仓库公开，别人能直接拿走 | 不写只在本机才成立的假设 |
 | 基础系统 | Debian 稳定版 slim（当前 trixie） | glibc；实测 sharp、wrangler 在 trixie-slim 直接可用，Alpine 的 musl 对带二进制的 npm 包不友好 |
-| 镜像 | `dev-node`、`dev-go` 两个，共用同一套底层设置 | Node 和 Go 升级节奏不同，合成一个会互相牵连 |
+| 镜像 | `node`、`golang` 两个，共用同一套底层设置；命名照 Docker Hardened Images：镜像名是语言，`-dev` 后缀表示带 shell、包管理器的开发和构建变体 | Node 和 Go 升级节奏不同，合成一个会互相牵连；DHI、Chainguard 都把开发变体写在标签后缀，运行变体是同名去掉 `-dev` 的标签 |
+| 用途 | 本机开发，加生产 Dockerfile 的构建阶段；生产运行阶段用 distroless、caddy 这类最小镜像。现在只出 `-dev` 变体，生产要跑 Node 服务时再出运行变体 | 两边编译用的版本一致。Docker 构建最佳实践：构建和测试用一种基础镜像，生产用另一种更精简的；DHI：需要 shell 或包管理器的构建阶段用 `-dev` |
 | Node 大版本 | 只出当前长期支持版 | 现在是 24；Node 26 于 2026-10-28 转为长期支持版后换 26，24 的旧标签保留 |
 | pnpm 安装 | 镜像内用 npm 装一个确定版本的 pnpm | corepack 从 Node 25 起不再随 Node 发行，不能再依赖它 |
 | pnpm 版本与项目的关系 | 项目 `package.json` 的 `packageManager` 写和镜像相同的版本 | 实测 pnpm 12 会按该字段自动下载切换版本（开关 `pmOnFail`），一致时不下载 |
-| 标签 | 每次构建推两个：版本标签如 `dev-node:24.21.0-pnpm12.8.1`，指向该组版本的最新一次构建；构建号标签如 `dev-node:24.21.0-pnpm12.8.1-r42`，永不覆写。不提供 `latest` | 版本号不变的 Debian 安全补丁要能到达 ghcr，纯不覆写的标签做不到；要完全钉死的项目用构建号标签 |
+| 标签 | `<版本>-<Debian 代号>-dev`，如 `node:24.21.0-trixie-dev`；版本标签指向这组版本的最新一次构建，每周重建会更新；要钉死就加 digest，模板写「标签@digest」。pnpm 版本写在镜像描述里，不进标签。不提供 `latest` | Debian 安全补丁要能到达同一个标签；官方 `node:24.21.0-trixie-slim`、DHI `-debian12-dev` 都把系统代号写进标签；项目用的 pnpm 由 `packageManager` 决定，不靠镜像标签 |
 | 可见性 | 仓库和镜像都公开，放个人账号 `zhaojiannet` | 个人和公司项目都用，公开镜像任何机器免登录可拉；仓库内容已审查无凭证 |
 | 源码 | 宿主机目录 bind mount 到容器 `/app` | 编辑器和 git 在宿主机工作 |
 | node_modules | 每个项目一个 named volume，挂在 `/app/node_modules` | 不落到宿主机目录；原生模块不跨平台 |
@@ -96,7 +97,7 @@ Go 镜像另有：
 
 `templates/node/compose.yaml` 的要点：
 
-- `build.dockerfile_inline` 内嵌 `FROM ghcr.io/zhaojiannet/dev-node:<完整标签>`，然后 `ARG PUID`、`ARG PGID`、`USER root`、`RUN fix-user "$$PUID" "$$PGID"`、`USER node` 五行，构建参数从 `.env` 读，默认 1000。`.dockerignore` 写 `*`，不把项目目录送给 daemon。
+- `build.dockerfile_inline` 内嵌 `FROM ghcr.io/zhaojiannet/node:<标签>@<digest>`，然后 `ARG PUID`、`ARG PGID`、`USER root`、`RUN fix-user "$$PUID" "$$PGID"`、`USER node` 五行，构建参数从 `.env` 读，默认 1000。`.dockerignore` 写 `*`，不把项目目录送给 daemon。
 - `./app` 挂到 `/app`；项目自己的 volume 挂 `/app/node_modules`；共享 volume 用固定名字 `pnpm`，所有项目同名，先起的建、后起的用；不标 `external`，所以 `docker compose down -v` 会把它一起删，它只是缓存。
 - `PUID`、`PGID`、`TZ` 从 `.env` 读。
 - 标签 `dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local` 给短域名，`dev.orbstack.http-port` 写明容器内端口，OrbStack 不用自己探测。环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS=.orb.local` 让 Vite 响应这个域名。
@@ -118,7 +119,7 @@ Go 镜像另有：
 
 ## CI
 
-- 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签和 `-r<运行号>` 构建号标签各一个。标签从 Dockerfile 的 `FROM` 行和 `images/node/package.json` 算出。PR 上到扫描为止，不推送。推送成功后另一个 job 把模板里的标签改成新的并提交到 main，这个 job 单独拿 `contents: write`。
+- 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签，再查出它指向的多架构索引 digest。标签从 Dockerfile 的 `FROM` 行和 `images/node/package.json` 算出。PR 上到扫描为止，不推送。推送成功后另一个 job 把模板里的 `FROM` 改成「标签@digest」并提交到 main，这个 job 单独拿 `contents: write`。
 - 扫描（`.github/workflows/scan.yml`）：gitleaks 每次推送和 PR。
 - Dependabot（`.github/dependabot.yml`）：每周查 `images/*` 的 Dockerfile、`images/node/package.json`、`services/*` 的 compose、工作流里的 action，冷却 3 天。Node、pnpm 忽略大版本更新，换大版本时改这两条。
 

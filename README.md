@@ -35,22 +35,25 @@ git clone https://github.com/zhaojiannet/docker-prototypes.git ~/Cores/Projects/
 ## 镜像
 
 ```
-ghcr.io/zhaojiannet/dev-node:<Node 版本>-pnpm<pnpm 版本>   例 24.21.0-pnpm12.8.1
-ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
+ghcr.io/zhaojiannet/node:<Node 版本>-<Debian 代号>-dev     例 24.21.0-trixie-dev
+ghcr.io/zhaojiannet/golang:<Go 版本>-<Debian 代号>-dev     例 1.27.1-trixie-dev
 ```
 
+- 命名照 Docker Hardened Images：镜像名是语言，标签是版本加 Debian 代号，`-dev` 后缀表示带 shell、包管理器、git 的开发和构建变体。现在只有 `-dev` 变体；以后生产要跑 Node 服务时，同版本不带工具的运行变体就是去掉 `-dev` 的同名标签。
+- 用途：本机开发，以及生产 Dockerfile 的构建阶段，两边的 Node、Go、pnpm 版本一致。生产的运行阶段不用它，编译产物复制进 distroless、caddy 这类最小镜像。
 - Debian 稳定版（trixie）底，`linux/amd64` 和 `linux/arm64`。
 - 预装 `ca-certificates`、`tzdata`、`git`，时区 `Asia/Tokyo`，普通用户 uid 1000。
-- Node 镜像装一个确定版本的 pnpm，不带 npm 和 corepack：`npx` 用 `pnpm dlx`，`npm create` 用 `pnpm create`。pnpm store 和缓存的路径已指向 `/home/node/.local/share/pnpm`，把共享 volume 挂到那里即可。
+- Node 镜像装一个确定版本的 pnpm，版本写在镜像描述（`org.opencontainers.image.description`）里，不进标签：项目实际用的 pnpm 由 `package.json` 的 `packageManager` 决定。不带 npm 和 corepack：`npx` 用 `pnpm dlx`，`npm create` 用 `pnpm create`。pnpm store 和缓存的路径已指向 `/home/node/.local/share/pnpm`，把共享 volume 挂到那里即可。
 - Go 镜像的 `GOMODCACHE`、`GOCACHE` 指向 `/go/pkg/mod`、`/go/cache`。
-- 每次构建推两个标签。版本标签（如 `24.21.0-pnpm12.8.1`）指向这组版本的最新一次构建，Debian 安全补丁会更新到它上面；带构建号的标签（如 `24.21.0-pnpm12.8.1-r42`）永远不动，要完全钉死就用它。没有 `latest`。
+- 版本标签指向这组版本的最新一次构建，每周重建会把 Debian 安全补丁更新到它上面。要钉死就在标签后面加 `@sha256:` digest，模板里就是这样写的。没有 `latest`。
 - 不装项目工具。air、sqlc 这类用 `go.mod` 的 `tool` 指令放项目里。
 
 ## 维护镜像
 
 - 每个版本号只写在一处：Node 和 Go 版本在 Dockerfile 的 `FROM` 行，pnpm 版本在 `images/node/package.json` 的 `dependencies.pnpm`。CI 从这几处算出标签。
-- `images.yml` 在三种情况下跑：`images/` 下有改动推到 main、每周一定时、手动触发。每次都不用缓存从头构建，跑 `images/test.sh` 和 Trivy，通过后构建双架构推到 ghcr.io，同时更新版本标签和新增一个构建号标签。PR 上只到扫描为止，不推送。每周重建是为了把 Debian 的安全补丁带上，`apt-get upgrade` 只在构建时跑。
-- 推送成功后，`images.yml` 把 `templates/*/compose.yaml` 里 `FROM` 的标签改成刚推上去的，有变化就直接提交到 main。
+- `images.yml` 在三种情况下跑：`images/` 下有改动推到 main、每周一定时、手动触发。每次都不用缓存从头构建，跑 `images/test.sh` 和 Trivy，通过后构建双架构推到 ghcr.io，更新版本标签。PR 上只到扫描为止，不推送。每周重建是为了把 Debian 的安全补丁带上，`apt-get upgrade` 只在构建时跑。
+- 推送成功后，`images.yml` 查出版本标签指向的多架构 digest，把 `templates/*/compose.yaml` 里的 `FROM` 改成「标签@digest」，有变化就直接提交到 main。
+- 镜像包第一次推送到个人账号下时默认是私有的，要在 GitHub 的包设置里改成公开，模板才能匿名拉取。
 - `scan.yml` 在推送和 PR 时跑 gitleaks。
 - Dependabot（GitHub 内置，配置在 `.github/dependabot.yml`）每周盯 Dockerfile 的 `FROM`、`images/node/package.json` 里的 pnpm、服务 compose 的镜像、工作流里的 action，新版本发布满 3 天才开 PR，CI 绿了人工合并。Node 只跟当前长期支持版的大版本，pnpm 只跟当前大版本。已建好的项目里的镜像标签在各自仓库，手动改。
 
@@ -76,9 +79,9 @@ ghcr.io/zhaojiannet/dev-go:<Go 版本>                        例 1.27.1
 ## 本机验证镜像
 
 ```bash
-docker build -f images/node/Dockerfile -t dev-node:test images/
-docker build -f images/go/Dockerfile -t dev-go:test images/
-images/test.sh dev-node:test dev-go:test
+docker build -f images/node/Dockerfile -t local/node:test images/
+docker build -f images/go/Dockerfile -t local/golang:test images/
+images/test.sh local/node:test local/golang:test
 ```
 
 ## 不入库的东西

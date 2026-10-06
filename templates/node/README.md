@@ -94,14 +94,14 @@ DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
 1. 在项目根复制模板：`cp -r /path/to/docker-prototypes/templates/node/. .`，删掉项目原有的 `Dockerfile`、`docker-compose.yml`。
 2. 源码放进 `app/`（原来就在根目录的话 `git mv` 进去）。
 3. `cp .env.example .env`，填 `COMPOSE_PROJECT_NAME`。
-4. `mv pnpm-workspace.yaml app/`，把 `app/package.json` 的 `packageManager` 改成镜像标签里的 pnpm 版本。
+4. `mv pnpm-workspace.yaml app/`，把 `app/package.json` 的 `packageManager` 改成镜像自带的 pnpm 版本（`docker compose exec app pnpm --version`）。
 5. `docker compose up -d --build`，然后 `docker compose exec app pnpm install`。旧的 `node_modules` volume 不用管，新 volume 名字不同，装一遍就好。
 
 ## 更新镜像
 
-拿同版本的安全补丁：`docker compose build --pull && docker compose up -d`。版本标签每周重建一次，`--pull` 才会去拉新的，不加就用本机缓存的。
+拿同版本的安全补丁：版本标签每周重建一次，模板里 `FROM` 那行的 digest 由 CI 跟着更新。把仓库模板里最新的 `FROM` 行复制到本项目 `compose.yaml`，再 `docker compose up -d --build`。`FROM` 钉了 digest，只 `--pull` 拿不到新的。
 
-换 Node 或 pnpm 版本：改 `compose.yaml` 里 `FROM` 那行的标签，再 `docker compose up -d --build`。可用标签见仓库根 README，本模板里的标签总是最新一次构建成功的那个。
+换 Node 版本：同样复制仓库模板里最新的 `FROM` 行（标签加 digest），再 `docker compose up -d --build`。命名规则见仓库根 README，模板里的总是最新一次构建成功的那个。
 
 ## 要额外系统库时
 

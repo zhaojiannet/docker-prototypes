@@ -30,6 +30,20 @@ docker compose up -d --wait
 
 `create-db.sh` 建出来的用户只能连自己那个库，其他库连不上，也拿不到 public schema 的默认权限。
 
+## 排序规则
+
+`create-db.sh` 建库时用 `TEMPLATE template0 ENCODING 'UTF8' LOCALE_PROVIDER builtin BUILTIN_LOCALE 'PG_UNICODE_FAST' LOCALE 'C.UTF-8'`。建库语句里写明了这些，所以在已经初始化过的实例上新建的库也是这套；已经存在的库不受影响，同名库再跑 `create-db.sh` 也不会改它的排序规则。compose 里的 `POSTGRES_INITDB_ARGS` 用同一套参数，只对新初始化的数据卷生效，让 `postgres` 库和 `template1` 也一样。
+
+`PG_UNICODE_FAST` 是 PostgreSQL 自带的 locale，按码位排序：大写排在小写前，平假名整块排在片假名前，全角字母排在最后。大小写转换用 Unicode 的完整映射，`casefold('Straße')` 得 `strasse`。
+
+选它是因为只依赖 PostgreSQL 本身，比较也最快。libc 的 locale 依赖系统 glibc，ICU 的依赖 ICU 库版本，这两样升级后排序都可能变化，文本索引要重建。builtin 的排序就是按码位比较，升级也不会变，`datcollversion` 固定是 `1`，普通文本索引不用因为升级重建。会变的是大小写转换和字符分类，它们跟着 PostgreSQL 自带的 Unicode 数据走，大版本升级时可能变化，而且没有版本警告。所以升级大版本时要看发布说明，有相关变化就重建用到 `lower`、`upper`、`casefold` 的表达式索引和生成列，以及 pg_trgm 的索引。
+
+查某个库现在的排序设置：
+
+```sql
+SELECT datlocprovider, datlocale, datcollversion FROM pg_database WHERE datname = '库名';
+```
+
 ## 常用命令
 
 ```bash

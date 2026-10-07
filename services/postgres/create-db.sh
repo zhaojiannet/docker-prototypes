@@ -21,7 +21,8 @@ docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U "${POSTGRES_USER}" -d
 	END
 	\$\$;
 
-	SELECT 'CREATE DATABASE ${DB_NAME} OWNER ${DB_USER}'
+	-- 排序规则用 builtin 的 PG_UNICODE_FAST，不依赖实例初始化时的 locale，原因见 README
+	SELECT 'CREATE DATABASE ${DB_NAME} TEMPLATE template0 ENCODING ''UTF8'' LOCALE_PROVIDER builtin BUILTIN_LOCALE ''PG_UNICODE_FAST'' LOCALE ''C.UTF-8'' OWNER ${DB_USER}'
 	WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_NAME}')\gexec
 EOSQL
 

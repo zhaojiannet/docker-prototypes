@@ -1,4 +1,4 @@
-FROM node:24.21.0-trixie-slim@sha256:8ec5d7557396cfe32d21c3f9c13072355ceab22b584578ca4bb28af31120cffe
+FROM node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
 
 # store 必须显式指定：不指定时 pnpm 发现默认位置和 node_modules 不在同一文件系统，
 # 会把 store 建到 node_modules/.pnpm-store 里，共享 volume 就没用上。

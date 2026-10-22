@@ -1,108 +1,76 @@
-# Node 项目模板
+# Node 项目
 
-一个空转的开发容器，源码在宿主机，依赖和缓存在容器里。宿主机只要有 Docker。
+源码在 `app/`，Node、pnpm、依赖都在容器里，宿主机只要有 Docker（OrbStack）。容器一启动就先 `pnpm install` 再 `pnpm dev --host`。
 
-## 新建项目
-
-仓库根目录的 `new-project.sh node <目录> --astro` 会把下面两节的步骤一次做完。手动做是这样：
+## 新建
 
 ```bash
-mkdir my-site && cd my-site
-cp -r /path/to/docker-prototypes/templates/node/. .
-cp .env.example .env            # 改 COMPOSE_PROJECT_NAME
-mkdir app
-docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
-docker compose up -d
+~/Cores/Projects/docker-prototypes/dp new node my-site --astro    # Astro 站点，--astro blog 指定 Astro 模板
+~/Cores/Projects/docker-prototypes/dp new node my-lib             # 只有 package.json，加好 dev 脚本后 dp up
 ```
 
-Linux 上如果 `id -u` 不是 1000，在 `.env` 里填上 `PUID`、`PGID` 再 `up`。Mac 上不用。已经 `up` 过之后再改这两个值，要 `docker compose up -d --build`，`up` 只在本地没有镜像时才构建。
+`dp new` 复制本模板到 `~/Cores/Projects/<名字>`，写 `.env`，生成项目，写 `packageManager`，然后启动。
 
-## 在容器里初始化项目
-
-`/app/node_modules` 已经是挂载好的 volume 目录，脚手架会把 `/app` 当成非空目录拒绝，所以先生成到临时目录再拷进来：
-
-```bash
-docker compose exec app sh -c 'pnpm create astro@latest /tmp/site --template minimal --no-install --no-git --yes && cp -a /tmp/site/. /app/ && rm -rf /tmp/site'
-mv pnpm-workspace.yaml app/
-docker compose exec app sh -c 'pnpm pkg set packageManager="pnpm@$(pnpm --version)"'
-docker compose exec app pnpm install
-```
-
-`pnpm-workspace.yaml` 要放在 `app/` 下和 `package.json` 一起，里面是装包限制和允许运行安装脚本的包白名单。`packageManager` 写镜像自带的 pnpm 版本，版本一致就不会在运行时另外下载。
+脚手架常带刚发布几天的版本，会被 `app/pnpm-workspace.yaml` 的 `minimumReleaseAge`（满 3 天才装）拦下。`dp new --astro` 会在终端里先装一次，被拦时 pnpm 会问放不放行，放行的包记进 `minimumReleaseAgeExclude`。容器启动时的安装没有终端，被拦就启动失败，`dp logs` 能看到。
 
 ## 日常
 
+在项目目录下运行时可以不写项目名，`dp` 指 `~/Cores/Projects/docker-prototypes/dp`：
+
 ```bash
-docker compose exec app pnpm install
-docker compose exec app pnpm dev --host     # 开发服务器要监听 0.0.0.0，宿主机才访问得到
-docker compose exec app pnpm build
-docker compose exec app sh                  # 进 shell
+dp up | down | restart | status
+dp logs
+dp update                          # 拉官方当前的 Node 长期支持版，重建并重启
+docker compose exec app pnpm add <包>
+docker compose exec app sh
 ```
 
-浏览器打开 `https://<COMPOSE_PROJECT_NAME>.orb.local`，见下一节。
+浏览器打开 `https://<COMPOSE_PROJECT_NAME>.orb.local`。
 
-## 访问方式
+- 端口：容器内 4321（Astro 默认）。别的框架要么监听 4321，要么把 `compose.yaml` 的 `dev.orbstack.http-port` 和 `compose.ports.yaml` 冒号右边改成它的端口。
+- Vite 默认对 `.orb.local` 返回 403，`compose.yaml` 里的 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行了它，项目配置里不用写 `allowedHosts`。
+- 要 `localhost` 加端口时，在 `.env` 里打开 `COMPOSE_FILE` 和 `APP_PORT` 两行。
 
-默认用 OrbStack 的域名访问，不映射宿主机端口，多个项目同时开也不会抢端口：
-
-- `https://<项目名>.orb.local`，由 compose 的标签 `dev.orbstack.domains` 指定；OrbStack 自带的 `https://app.<项目名>.orb.local` 也能用。证书 OrbStack 自动签发和安装。容器里的 Node 会信任系统证书库，OrbStack 的根证书也在里面，Node 程序访问 `https://*.orb.local` 不用另外配置。
-- Vite 默认只响应 localhost 和 IP，其他主机名一律返回 403。compose 里的环境变量 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行 `.orb.local`，Astro 等基于 Vite 的框架都认，项目配置里不用再写 `allowedHosts`。
-- 热重载不用开文件轮询（`usePolling`），OrbStack 会把 Mac 上的文件改动通知到容器里。
-
-不用 OrbStack（Linux、Docker Desktop），或者就要 `localhost` 加端口时，在 `.env` 里加：
-
-```
-COMPOSE_FILE=compose.yaml:compose.ports.yaml
-APP_PORT=4321
-```
-
-compose 会合并 `compose.ports.yaml`，把 `127.0.0.1:APP_PORT` 映射到容器内的 4321。改完 `docker compose up -d`。`new-project.sh` 用 `--access port` 时就是写这两行；不指定时，Docker 是 OrbStack 就用域名，否则用端口。
-
-## 放哪
+## 东西放哪
 
 | 内容 | 位置 |
 |---|---|
-| 源码 | `./app`，挂到容器 `/app` |
-| `node_modules` | 本项目的 named volume，不出现在宿主机 |
-| pnpm store、元数据缓存、按 `packageManager` 下载的其他版本 | 所有 Node 项目共用的 volume `pnpm`，包只下载一次 |
+| 源码、`pnpm-workspace.yaml` | `./app`，挂到容器 `/app` |
+| `node_modules` | 本项目的 volume，不出现在宿主机 |
+| pnpm store 和缓存 | 所有 Node 项目共用的 volume `pnpm` |
 | `dist`、`.astro` 等构建产物 | `./app` 下，由项目的 `.gitignore` 忽略 |
 
-## 删除项目
-
-`docker compose down` 只停容器，依赖和缓存都保留。`docker compose down -v` 会把本项目的 volume 连同所有项目共用的 `pnpm` 一起删掉，共用的只是缓存，下次安装会重新下载。
+`docker compose down -v` 会连共用的 `pnpm` 一起删，它只是缓存，下次安装重新下载。
 
 ## 连数据库
 
-1. 起服务：`cd services/postgres && cp .env.example .env && docker compose up -d --wait`。
-2. 建库建用户：`./create-db.sh my_site my_site`，它会打印随机生成的密码。
-3. 把连接串写进 `app/.env`（Astro 从项目根也就是 `app/` 读 `.env`）。项目根目录那个 `.env` 只给 compose 用，进不了容器。
+`dp db new postgres` 起实例，`dp db create postgres my_site my_site` 建库建用户并打印密码。连接串写进 `app/.env`（项目根的 `.env` 只给 compose 用，进不了容器）：
 
 ```
 DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
 ```
 
-主机名是服务名 `postgres`，端口是容器内的 5432，不是宿主机映射的端口。MariaDB、MySQL 用 `mariadb:3306`、`mysql:3306`，Valkey 用 `redis://:密码@valkey:6379`。网络 `docker-net` 标了 `external`，本机第一次用前要先建，`new-project.sh` 会自动建。
+主机名是服务名，端口是容器内端口。MariaDB、MySQL 用 `mariadb:3306`、`mysql:3306`，Valkey 用 `redis://:密码@valkey:6379`。
 
-## 容器内端口
+## 生产构建
 
-容器内用 4321，这是 Astro 开发服务器的默认端口。用别的框架时，要么让它监听 4321，要么把 `compose.yaml` 里标签 `dev.orbstack.http-port` 和 `compose.ports.yaml` 里冒号右边都改成它的端口。
+`Dockerfile` 有三段：`dev` 是开发容器，`build` 装依赖并 `pnpm build`，`runtime` 用 Caddy 托管静态文件。产物目录不是 `dist` 时加构建参数 `OUTPUT_DIR`。部署到 Cloudflare 这类平台的站点用不到后两段。
+
+部署到自建服务器见仓库的 `templates/deploy/README.md`。
+
+## 依赖更新
+
+`.github/dependabot.yml` 每周查 `app/` 的 npm 依赖和工作流里的 action，发布满 3 天才开 PR，小版本和补丁合成一个 PR。`.github/workflows/dependabot-automerge.yml` 给非大版本的 PR 打开自动合并，CI 通过后自动合进去。要生效，GitHub 仓库设置里要：
+
+1. General 里勾选 Allow auto-merge。
+2. 给 main 加分支保护，把 CI 设为必须通过的检查，自动合并才会等 CI 跑完。
+
+大版本的 PR 留给人看。
 
 ## 迁移已有项目
 
-目标目录非空时 `new-project.sh` 会退出，手动做：
-
-1. 在项目根复制模板：`cp -r /path/to/docker-prototypes/templates/node/. .`，删掉项目原有的 `Dockerfile`、`docker-compose.yml`。
-2. 源码放进 `app/`（原来就在根目录的话 `git mv` 进去）。
+1. 项目根复制本模板：`cp -R ~/Cores/Projects/docker-prototypes/templates/node/. .`，删掉原来的 `Dockerfile`、`docker-compose.yml`。
+2. 源码 `git mv` 进 `app/`，原来的 `pnpm-workspace.yaml` 设置合进 `app/pnpm-workspace.yaml`。
 3. `cp .env.example .env`，填 `COMPOSE_PROJECT_NAME`。
-4. `mv pnpm-workspace.yaml app/`，把 `app/package.json` 的 `packageManager` 改成镜像自带的 pnpm 版本（`docker compose exec app pnpm --version`）。
-5. `docker compose up -d --build`，然后 `docker compose exec app pnpm install`。旧的 `node_modules` volume 不用管，新 volume 名字不同，装一遍就好。
-
-## 更新镜像
-
-拿同版本的安全补丁：版本标签每周重建一次，模板里 `FROM` 那行的 digest 由 CI 跟着更新。把仓库模板里最新的 `FROM` 行复制到本项目 `compose.yaml`，再 `docker compose up -d --build`。`FROM` 钉了 digest，只 `--pull` 拿不到新的。
-
-换 Node 版本：同样复制仓库模板里最新的 `FROM` 行（标签加 digest），再 `docker compose up -d --build`。命名规则见仓库根 README，模板里的总是最新一次构建成功的那个。
-
-## 要额外系统库时
-
-在项目里加一个 `Dockerfile`，`FROM` 同一个基础镜像，`USER root` 装完再 `USER node`，把 compose 里的 `dockerfile_inline` 换成 `dockerfile: Dockerfile`，并保留 `ARG` 到 `USER node` 那五行。
+4. `app/package.json` 的 `packageManager` 写 `pnpm@<版本>`，版本用 `docker compose run --rm --no-deps app pnpm --version` 查。
+5. `dp up`。

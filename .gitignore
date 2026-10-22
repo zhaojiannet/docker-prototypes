@@ -9,3 +9,6 @@
 *.dump
 *.tar.gz
 *.zip
+
+# 端到端测试在 Mac 上跑时的临时目录
+tests/.work/

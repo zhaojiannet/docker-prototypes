@@ -1,0 +1,59 @@
+name: db-eol
+
+on:
+  schedule:
+    # 每周一 09:00（Asia/Tokyo）
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # 数据库标签只写到版本线（18-trixie、12.3…），换大版本要导出导入，得提前安排；
+      # 离停止支持不到 DAYS 天就开 issue，同名 issue 还开着时不重复开
+      - name: 检查版本线的停止支持日期
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS: 183
+        run: |
+          set -euo pipefail
+          today=$(date -u +%s)
+          for f in databases/*/compose.yaml; do
+            image=$(sed -nE 's/^ *image: *([^ ]+).*/\1/p' "$f" | head -1)
+            name=${image%%:*}
+            tag=${image#*:}
+            release=${tag%%-*}
+            case ${name##*/} in
+              postgres) product=postgresql ;;
+              mysql | mariadb | valkey) product=${name##*/} ;;
+              *) echo "::warning::$f 的镜像 $image 不在对照表里"; continue ;;
+            esac
+            # 一个查不到不影响其他的
+            if ! eol=$(curl -fsS "https://endoflife.date/api/v1/products/${product}/releases/${release}" | jq -r '.result.eolFrom // empty'); then
+              echo "::warning::查不到 $product $release 的停止支持日期"
+              continue
+            fi
+            if [ -z "$eol" ]; then
+              echo "$product $release：没有停止支持日期"
+              continue
+            fi
+            left=$(( ($(date -u -d "$eol" +%s) - today) / 86400 ))
+            echo "$product $release：${eol} 停止支持，还剩 ${left} 天"
+            [ "$left" -lt "$DAYS" ] || continue
+            title="$product $release 将于 $eol 停止支持"
+            if [ -n "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+              continue
+            fi
+            gh issue create --title "$title" --body "$(printf '%s\n' \
+              "\`$f\` 用的是 \`$image\`，这条版本线 $eol 停止支持，还剩 $left 天。" \
+              "" \
+              "换到新的版本线要导出再导入，步骤见 \`$(dirname "$f")/README.md\` 的「升级」。" \
+              "改完仓库里的标签，再在各台机器上按步骤迁移数据。")"
+          done

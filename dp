@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# 用法见 ./dp help。在项目目录里运行时可以省略项目名
+# 只用 macOS 自带 bash 3.2 有的写法：没有关联数组、mapfile、${var,,}；
+# 变量后面紧跟全角字符时必须写成 ${var}，3.2 会把全角字符算进变量名
+set -euo pipefail
+
+DP_HOME=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+DP_ROOT=${DP_ROOT:-$HOME/Cores/Projects}
+DP_YES=${DP_YES:-}
+
+usage() {
+	cat <<'EOF'
+用法: dp [-y] <命令> [参数]      -y 对 all 不再逐个确认
+
+项目（<项目> 是 ~/Cores/Projects 下的目录名，在项目目录里运行可省略；all 表示全部）
+  new node <名字> [--astro [模板]]    从模板新建 Node 项目，--astro 顺带生成 Astro 站点
+  new go <名字> [--module <模块路径>] 从模板新建 Go 项目
+  copy <已有项目> <新名字>            以已有项目为底复制一个新项目
+  clone <git 地址> [名字]             克隆已有项目并启动，换开发机时用
+  up|down|restart [<项目>|all]        启动、停止、重启
+  update [<项目>|all]                 按 compose 和 Dockerfile 里的标签拉最新镜像，重建并重启
+  status [<项目>|all]                 查看容器状态
+  logs [<项目>] [docker compose logs 的参数]
+
+数据库（<类型> 是 postgres、mariadb、mysql、valkey）
+  db new <类型>                       复制到 ~/Cores/Projects 下、生成密码、启动
+  db create <类型> <库名> <用户名> [密码]
+  db drop <类型> <库名> [用户名]
+  db users <类型> [用户名]
+  db backup <类型>|all [库名]         备份到各自的 backups/ 并清理旧备份
+  db restore <类型> <备份文件> [库名]
+
+服务器（项目 .env 里写 DEPLOY_MODE、DEPLOY_HOST、DEPLOY_DIR 的才算，见 templates/deploy）
+  deploy [<项目>|all] [版本] [--host <ssh 别名>]
+  rollback <项目> <版本>
+  patch [<项目>|all] [--host <ssh 别名>]   代码不变，只拉镜像补丁并重启
+  remote-status [--host <ssh 别名>]
+  backup [<项目>] [备份项]             在服务器上执行项目的 deploy/backup.sh，拉回 ~/Cores/Projects/backup/<项目>/
+EOF
+}
+
+die() {
+	echo "$*" >&2
+	exit 1
+}
+
+confirm() {
+	[ -z "$DP_YES" ] || return 0
+	local ans
+	read -r -p "$1 确认吗? [y/N] " ans || ans=
+	[ "$ans" = y ] || [ "$ans" = Y ] || die "已取消"
+}
+
+is_project() {
+	[ -f "$1/compose.yaml" ] || [ -f "$1/compose.yml" ] || [ -f "$1/docker-compose.yaml" ] || [ -f "$1/docker-compose.yml" ]
+}
+
+list_projects() {
+	local d
+	for d in "$DP_ROOT"/*/; do
+		d=${d%/}
+		if is_project "$d"; then basename "$d"; fi
+	done
+}
+
+# 不写项目名时取当前所在的项目：当前目录在 DP_ROOT 下哪一层都行，取 DP_ROOT 下的第一级
+current_project() {
+	local rel name
+	case $PWD/ in
+	"$DP_ROOT"/*/*) ;;
+	*) return 1 ;;
+	esac
+	rel=${PWD#"$DP_ROOT"/}
+	name=${rel%%/*}
+	is_project "$DP_ROOT/$name" || return 1
+	echo "$name"
+}
+
+# 把参数里的项目名换成项目列表：all 是全部，空是当前项目
+resolve_targets() {
+	local arg=${1:-}
+	if [ "$arg" = all ]; then
+		list_projects
+	elif [ -n "$arg" ]; then
+		is_project "$DP_ROOT/$arg" || die "$DP_ROOT/$arg 不是项目（没有 compose 文件）"
+		echo "$arg"
+	else
+		current_project || die "当前目录不在项目里，写上项目名或 all"
+	fi
+}
+
+env_get() {
+	[ -f "$1" ] || return 0
+	# compose 认 KEY="值" 和 KEY='值'，引号不算值的一部分
+	sed -n "s/^$2=//p" "$1" | tail -1 | sed -E "s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/"
+}
+
+ensure_network() {
+	docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net >/dev/null
+}
+
+# run_each <函数> <项目...>：逐个执行，一个失败不影响后面的，最后汇总，有失败就返回 1
+run_each() {
+	local fn=$1 name failed="" ok="" rc
+	shift
+	for name in "$@"; do
+		echo "== $name"
+		# 放进 if 里的子 shell 会忽略 set -e，出错后照样往下跑；所以先关掉，在子 shell 里重新打开
+		set +e
+		(
+			set -e
+			"$fn" "$name"
+		)
+		rc=$?
+		set -e
+		if [ "$rc" -eq 0 ]; then
+			ok="$ok $name"
+		else
+			failed="$failed $name"
+		fi
+	done
+	if [ $# -gt 1 ]; then
+		echo
+		echo "成功:${ok:- 无}"
+		echo "失败:${failed:- 无}"
+	fi
+	[ -z "$failed" ]
+}
+
+confirm_targets() {
+	[ $# -gt 1 ] || return 0
+	echo "将处理这些项目：$*"
+	confirm "共 $# 个，"
+}
+
+. "$DP_HOME/cli/project.sh"
+. "$DP_HOME/cli/db.sh"
+. "$DP_HOME/cli/remote.sh"
+
+if [ "${1:-}" = -y ]; then
+	DP_YES=1
+	shift
+fi
+cmd=${1:-help}
+[ $# -eq 0 ] || shift
+case $cmd in
+new) cmd_new "$@" ;;
+copy) cmd_copy "$@" ;;
+clone) cmd_clone "$@" ;;
+up | down | restart | update | status) cmd_compose "$cmd" "$@" ;;
+logs) cmd_logs "$@" ;;
+db) cmd_db "$@" ;;
+deploy) cmd_deploy "$@" ;;
+rollback) cmd_rollback "$@" ;;
+patch) cmd_patch "$@" ;;
+remote-status) cmd_remote_status "$@" ;;
+backup) cmd_backup "$@" ;;
+help | -h | --help) usage ;;
+*)
+	usage >&2
+	exit 1
+	;;
+esac

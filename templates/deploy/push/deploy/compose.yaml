@@ -1,0 +1,20 @@
+# 生产用的 compose，scripts/deploy.sh 把 deploy/ 整个传到服务器的 DEPLOY_DIR 后在那里运行
+# 不写的话项目名取 DEPLOY_DIR 的目录名，目录名相同的项目在同一台服务器上会互相覆盖
+name: PROJECT
+
+services:
+  app:
+    image: IMAGE:TAG
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+    # scripts/deploy.sh 用 --wait 等到这里报健康才算部署成功
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+    networks:
+      - docker-net
+
+networks:
+  docker-net:
+    external: true
+    name: docker-net

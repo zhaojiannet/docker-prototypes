@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:18-trixie
+    # 一台机器只跑一个，容器名固定成服务名：连库的主机名、docker exec、看日志都用同一个名字
+    container_name: postgres
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请先在 .env 里设置}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      # 只在数据卷第一次初始化时生效，跟 create-db.sh 建库用同一套排序规则
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=builtin --builtin-locale=PG_UNICODE_FAST --locale=C.UTF-8"
+      LANG: C.UTF-8
+      # PG18 的数据目录换了层级，显式指定避免用错
+      PGDATA: /var/lib/postgresql/18/docker
+
+    # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
+    # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+
+    volumes:
+      - data:/var/lib/postgresql
+      - ./conf/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+      - ./backups:/backups
+
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
+      start_period: 60s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - docker-net
+
+volumes:
+  # external：compose 不建也不删这个卷，`down -v` 删不到数据；第一次 up 之前先 `docker volume create postgres-data`
+  data:
+    external: true
+    name: postgres-data
+
+networks:
+  # 所有项目和数据库共用。external：compose 不建也不删，第一次用前先 `docker network create docker-net`
+  docker-net:
+    external: true
+    name: docker-net

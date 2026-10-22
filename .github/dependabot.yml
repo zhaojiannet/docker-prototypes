@@ -1,6 +1,6 @@
 version: 2
 updates:
-  # docker、docker-compose 两组的镜像都是 Docker 官方或项目自己发布的，出安全修复版要尽快跟上，不设冷却期，每天检查；
+  # images/ 下的镜像都是 Docker 官方发布的，出安全修复版要尽快跟上，不设冷却期，每天检查；
   # 不写 cooldown 时 Dependabot 默认冷却 3 天，所以要用 exclude 显式排除
   - package-ecosystem: docker
     directories:
@@ -27,21 +27,6 @@ updates:
     ignore:
       # pnpm 只跟当前大版本，换大版本时改这里
       - dependency-name: pnpm
-        update-types: ["version-update:semver-major"]
-
-  - package-ecosystem: docker-compose
-    directories:
-      - /services/*
-    schedule:
-      interval: daily
-      timezone: Asia/Tokyo
-    cooldown:
-      exclude: ["*"]
-    ignore:
-      # MySQL 的 26.x、MariaDB 的 13.x 是滚动发布线，服务只跟官方 lts 标签对应的大版本
-      - dependency-name: mysql
-        update-types: ["version-update:semver-major"]
-      - dependency-name: mariadb
         update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions

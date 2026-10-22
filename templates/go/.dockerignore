@@ -1,2 +1,7 @@
-# 内嵌的构建指令不复制任何文件，不把项目目录送给 daemon
+# 只有构建阶段要用 app/ 下的源码，密钥和本地编出的程序都不送给 daemon
 *
+!app
+app/.env
+app/.env.*
+app/tmp
+**/.DS_Store

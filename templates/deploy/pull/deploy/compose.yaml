@@ -1,0 +1,21 @@
+# 生产用的 compose，在服务器上这个目录里运行。镜像由 .github/workflows/image.yml 构建，
+# 标签是提交号，由 deploy.sh 写进 .env 的 IMAGE_TAG
+# 不写的话项目名取目录名，拉取模式下各项目的目录都叫 deploy，同一台服务器上会互相覆盖
+name: PROJECT
+
+services:
+  app:
+    image: ghcr.io/OWNER/REPO:${IMAGE_TAG:?由 deploy.sh 写进 .env}
+    restart: unless-stopped
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+    # deploy.sh 用 --wait 等到这里报健康才算发布成功；distroless 里没有 shell 和 curl，要由程序自己提供检查命令
+    # healthcheck:
+    #   test: ["CMD", "api", "healthcheck"]
+    networks:
+      - docker-net
+
+networks:
+  docker-net:
+    external: true
+    name: docker-net

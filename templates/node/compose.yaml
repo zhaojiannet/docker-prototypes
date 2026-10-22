@@ -2,18 +2,7 @@ services:
   app:
     build:
       context: .
-      # 只在基础镜像上改用户的 uid、gid，让容器里写出的文件和宿主机用户同属主。
-      # Linux 上 uid 不是 1000 时在 .env 里写 PUID、PGID；Mac 上不用管。
-      dockerfile_inline: |
-        FROM ghcr.io/zhaojiannet/node:24.22.1-trixie-dev@sha256:d3c9136c05a71ff26fc3e63af405429b23ba3de188e507cad6f39673cd6d509e
-        ARG PUID
-        ARG PGID
-        USER root
-        RUN fix-user "$$PUID" "$$PGID"
-        USER node
-      args:
-        PUID: ${PUID:-1000}
-        PGID: ${PGID:-1000}
+      target: dev
     init: true
     restart: unless-stopped
     environment:
@@ -39,7 +28,7 @@ volumes:
     name: pnpm
 
 networks:
-  # 所有项目和数据库共用。external：compose 不建也不删，第一次用前先 `docker network create docker-net`
+  # 所有项目和数据库共用。external：compose 不建也不删，dp 第一次用时会建好
   docker-net:
     external: true
     name: docker-net

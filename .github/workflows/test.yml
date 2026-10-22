@@ -1,0 +1,37 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # 基础镜像跟官方浮动，代码不动也可能被新版本弄坏，每周一跑一次先发现
+  schedule:
+    - cron: "0 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # 不设 LANG 时 shellcheck 输出中文会报编码错误
+      - name: shellcheck
+        run: |
+          docker run --rm -e LANG=C.UTF-8 -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.11.0 -S warning -x \
+            dp cli/*.sh server/setup.sh databases/*/*.sh tests/*.sh \
+            templates/deploy/*/deploy/*.sh templates/deploy/push/scripts/deploy.sh
+      - name: actionlint
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -no-color \
+            .github/workflows/*.yml templates/*/.github/workflows/*.yml templates/deploy/pull/.github/workflows/*.yml
+
+  e2e:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: tests/e2e.sh

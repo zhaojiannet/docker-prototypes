@@ -55,7 +55,7 @@ ghcr.io/zhaojiannet/golang:<Go 版本>-<Debian 代号>-dev     例 1.27.1-trixie
 - 推送成功后，`images.yml` 查出版本标签指向的多架构 digest，把 `templates/*/compose.yaml` 里的 `FROM` 改成「标签@digest」，有变化就直接提交到 main。
 - 镜像包第一次推送到个人账号下时默认是私有的，要在 GitHub 的包设置里改成公开，模板才能匿名拉取。
 - `scan.yml` 在推送和 PR 时跑 gitleaks。
-- Dependabot（GitHub 内置，配置在 `.github/dependabot.yml`）每周盯 Dockerfile 的 `FROM`、`images/node/package.json` 里的 pnpm、服务 compose 的镜像、工作流里的 action，新版本发布满 3 天才开 PR，CI 绿了人工合并。Node 只跟当前长期支持版的大版本，pnpm 只跟当前大版本。已建好的项目里的镜像标签在各自仓库，手动改。
+- Dependabot（GitHub 内置，配置在 `.github/dependabot.yml`）每天盯 Dockerfile 的 `FROM` 和服务 compose 的镜像，这些镜像都是 Docker 官方或项目自己发布的，有新版就开 PR；每周盯 `images/node/package.json` 里的 pnpm 和工作流里的 action，新版本发布满 3 天才开 PR。CI 绿了人工合并。Node 只跟当前长期支持版的大版本，pnpm 只跟当前大版本。已建好的项目里的镜像标签在各自仓库，手动改。
 
 ## 新建一个项目
 

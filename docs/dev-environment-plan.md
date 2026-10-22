@@ -37,7 +37,7 @@
 | 进容器方式 | 容器空转，命令全部 `docker compose exec` 执行 | 不做编辑器挂进容器，不引入 Dev Containers CLI |
 | 共享服务 | PostgreSQL、MariaDB、MySQL、Valkey 各自一个目录一个 compose，按需起 | 四种都要，但不一次全装 |
 | 共享网络 | 各 compose 都连外部网络 `docker-net`，标 `external`，本机第一次用前手动建一次 | 不标 `external` 时后起的项目会收到 compose 的警告（网络不是本项目建的，应设 `external: true`），网络归第一个起的项目，最后一个项目 `down` 也删不掉它；规则和数据卷一致 |
-| 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；新版本发布满 3 天才升。pnpm 版本写在 `images/node/package.json` 的依赖里，由 Dependabot 的 npm 生态盯 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。Dependabot 认不出 Dockerfile 里 `ARG` 的版本号，写在 `package.json` 里它能按 npm 包处理，冷却和忽略大版本的规则照用 |
+| 版本更新 | Dependabot 开 PR，CI 构建验证通过后人工合并；Docker 官方或项目自己发布的镜像有新版就升，pnpm 和 action 发布满 3 天才升。pnpm 版本写在 `images/node/package.json` 的依赖里，由 Dependabot 的 npm 生态盯 | GitHub 内置，不装第三方 App、不给外部服务仓库权限。Dependabot 认不出 Dockerfile 里 `ARG` 的版本号，写在 `package.json` 里它能按 npm 包处理，冷却和忽略大版本的规则照用 |
 | 模板里的镜像标签 | `images.yml` 推送成功后改 `templates/*/compose.yaml` 的 `FROM` 标签，直接提交到 main | 推送成功后标签一定存在；改的只是一个版本号，升级本身已在 Dependabot 的 PR 里人工审过。个人仓库默认不允许工作流开 PR，直接提交不用改仓库设置 |
 | 访问方式 | 默认用 OrbStack 域名 `<项目名>.orb.local`，不映射端口；要端口时 `.env` 里用 `COMPOSE_FILE` 合并 `compose.ports.yaml` | 多个项目同时开不抢端口，OrbStack 自带 https。`COMPOSE_FILE` 写在 `.env` 是 compose 文档给的用法，切换只改一行；`compose.override.yaml` 会被自动读取，留给项目自己用 |
 | 漏洞扫描 | Trivy 每次构建扫一次；镜像每周一定时重建，重建里也扫 | `apt-get upgrade` 只在构建时跑，Debian 的安全补丁要靠重建带上 |
@@ -121,7 +121,7 @@ Go 镜像另有：
 
 - 构建（`.github/workflows/images.yml`）：`images/` 下有改动推到 main、每周一定时、手动触发三种情况跑。不用缓存从头构建本机架构并载入，跑 `images/test.sh` 和 Trivy，通过后用 QEMU 构建 `linux/amd64,linux/arm64` 推到 ghcr.io，推版本标签，再查出它指向的多架构索引 digest。标签从 Dockerfile 的 `FROM` 行和 `images/node/package.json` 算出。PR 上到扫描为止，不推送。推送成功后另一个 job 把模板里的 `FROM` 改成「标签@digest」并提交到 main，这个 job 单独拿 `contents: write`。
 - 扫描（`.github/workflows/scan.yml`）：gitleaks 每次推送和 PR。
-- Dependabot（`.github/dependabot.yml`）：每周查 `images/*` 的 Dockerfile、`images/node/package.json`、`services/*` 的 compose、工作流里的 action，冷却 3 天。Node、pnpm 忽略大版本更新，换大版本时改这两条。
+- Dependabot（`.github/dependabot.yml`）：每天查 `images/*` 的 Dockerfile 和 `services/*` 的 compose，不设冷却；每周查 `images/node/package.json` 和工作流里的 action，冷却 3 天。Node、pnpm 忽略大版本更新，换大版本时改这两条。
 
 ## 待验证
 

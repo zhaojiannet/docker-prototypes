@@ -139,8 +139,22 @@ cmd_clone() {
 	echo "已克隆到 ${dir}。app/.env 这类不进 git 的密钥文件要另外拷过来"
 }
 
+# 起不来的服务会一直自动重启，等下次重启时健康状态停在 unhealthy；改好以后 compose 配置没变，
+# up 不会动它，--wait 读到旧状态就报失败。先重启这些服务，健康检查从头算。
+# 只认 restarting：在运行、只是暂时不健康的（比如负载高的数据库）不去打断
+restart_crashed() {
+	local bad
+	bad=$(docker compose ps --status restarting --services | sort -u)
+	# shellcheck disable=SC2086
+	[ -z "$bad" ] || docker compose restart --no-deps $bad
+}
+
 # --wait：有健康检查的服务（开发容器、数据库）等到通过才算成功，起不来时报失败
-compose_up() { ensure_shared && docker compose up -d --wait; }
+compose_up() {
+	ensure_shared
+	restart_crashed
+	docker compose up -d --wait
+}
 compose_down() { docker compose down; }
 compose_restart() { docker compose restart; }
 compose_status() { docker compose ps -a; }
@@ -149,6 +163,7 @@ compose_update() {
 	docker compose pull --ignore-buildable
 	docker compose build --pull
 	ensure_shared
+	restart_crashed
 	docker compose up -d --wait
 }
 

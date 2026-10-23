@@ -61,7 +61,7 @@ DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
 
 ## 依赖更新
 
-`.github/dependabot.yml` 每周查 `app/` 的 npm 依赖和工作流里的 action，发布满 3 天才开 PR，小版本和补丁合成一个 PR。`.github/workflows/dependabot-automerge.yml` 给非大版本的 PR 打开自动合并，CI 通过后自动合进去。要生效，GitHub 仓库设置里要：
+`.github/dependabot.yml` 每周查 `app/` 的 npm 依赖和工作流里的 action，发布满 3 天才开 PR，小版本和补丁合成一个 PR。`.github/workflows/dependabot-automerge.yml` 给非大版本的 PR 打开自动合并，分支保护要求的检查都通过后自动合进去。要生效，GitHub 仓库设置里要：
 
 1. General 里勾选 Allow auto-merge。
 2. 给 main 加分支保护，把 CI 设为必须通过的检查，自动合并才会等 CI 跑完。

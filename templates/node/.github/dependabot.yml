@@ -1,7 +1,7 @@
 version: 2
 updates:
   # 第三方依赖新版本发布满 3 天才开 PR，避开刚发布就被发现投毒、随即撤回的版本。
-  # 小版本和补丁合成一个 PR，CI 通过后由 dependabot-automerge.yml 自动合并；大版本单独开 PR，要人看
+  # 小版本和补丁合成一个 PR，分支保护要求的检查通过后由 dependabot-automerge.yml 自动合并；大版本单独开 PR，要人看
   - package-ecosystem: npm
     directory: /app
     schedule:

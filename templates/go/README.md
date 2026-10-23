@@ -8,7 +8,7 @@
 ~/Cores/Projects/docker-prototypes/dp new go my-svc --module example.com/my-svc
 ```
 
-`dp new` 复制本模板到 `~/Cores/Projects/<名字>`，写 `.env`，`go mod init`，把 air 登记成 `go.mod` 里的工具，然后启动。不写 `--module` 时模块路径就是名字。
+`dp new` 复制本模板到 `~/Cores/Projects/<名字>`，写 `.env`，`go mod init`，把 air 登记成 `go.mod` 里的工具，然后启动。本文件不复制，项目的 `README.md` 只有项目名和指向这里的一句，项目自己的说明写在那里。不写 `--module` 时模块路径就是名字。
 
 ## 目录约定
 
@@ -74,7 +74,7 @@ DATABASE_URL=postgresql://my_svc:密码@postgres:5432/my_svc
 
 ## 迁移已有项目
 
-1. 项目根复制本模板：`cp -R ~/Cores/Projects/docker-prototypes/templates/go/. .`，删掉原来的 `Dockerfile`、`docker-compose.yml`。
+1. 项目根复制本模板，本文件除外：`rsync -a --exclude /README.md ~/Cores/Projects/docker-prototypes/templates/go/ .`，删掉原来的 `Dockerfile`、`docker-compose.yml`。项目的 `README.md` 只写项目自己的内容，开发环境指向本文件。
 2. 源码（含 `go.mod`）`git mv` 进 `app/`，入口按上面的约定放到 `cmd/` 下。
 3. `cp .env.example .env`，填 `COMPOSE_PROJECT_NAME`。
 4. 原来 `go install` 的工具改成 `go get -tool`，至少要有 air。

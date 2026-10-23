@@ -61,6 +61,8 @@ cmd_new() {
 	dir=$(new_target "$name")
 	mkdir -p "$dir"
 	cp -R "$DP_HOME/templates/$kind/." "$dir/"
+	# 模板的 README 讲模板怎么用，项目的 README 只写项目自己的
+	printf '# %s\n\n开发环境和日常命令见 https://github.com/zhaojiannet/docker-prototypes/blob/main/templates/%s/README.md\n' "$name" "$kind" >"$dir/README.md"
 	mkdir -p "$dir/app"
 	write_env "$dir" "$name"
 	ensure_shared "$dir"

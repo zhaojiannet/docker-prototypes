@@ -91,6 +91,7 @@ group_project() {
 	# 日常的机器上 pnpm 卷往往是别的项目的 compose 先建的，带着那个项目的标签
 	docker volume create --label com.docker.compose.project=other-project pnpm >/dev/null
 	"$DP" new node web
+	expect_eq "$(cat "$P/web/README.md")" "$(printf '# web\n\n开发环境和日常命令见 https://github.com/zhaojiannet/docker-prototypes/blob/main/templates/node/README.md')" "新项目的 README 只有项目名和模板说明的地址"
 	cd "$P/web"
 	cat >app/server.cjs <<'EOF'
 require('http').createServer((req, res) => res.end('node-ok ' + Intl.DateTimeFormat().resolvedOptions().timeZone)).listen(4321, '0.0.0.0');
@@ -114,6 +115,7 @@ EOF
 	docker rm -f e2e-web-rt >/dev/null
 
 	"$DP" new go api --module example.com/api
+	expect_eq "$(cat "$P/api/README.md")" "$(printf '# api\n\n开发环境和日常命令见 https://github.com/zhaojiannet/docker-prototypes/blob/main/templates/go/README.md')" "Go 新项目的 README 只有项目名和模板说明的地址"
 	airv=$(awk '$1 == "github.com/air-verse/air" { print $2 }' "$P/api/app/go.mod")
 	case $airv in v*-*) fail "air 装成了预发布版 ${airv}" ;; v*) ok "air 装的是正式版" ;; *) fail "go.mod 里没有 air" ;; esac
 	mkdir -p "$P/api/app/cmd/api"

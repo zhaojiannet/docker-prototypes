@@ -9,7 +9,7 @@
 ~/Cores/Projects/docker-prototypes/dp new node my-lib             # 只有 package.json，加好 dev 脚本后 dp up
 ```
 
-`dp new` 复制本模板到 `~/Cores/Projects/<名字>`，写 `.env`，生成项目，写 `packageManager`，然后启动。
+`dp new` 复制本模板到 `~/Cores/Projects/<名字>`，写 `.env`，生成项目，写 `packageManager`，然后启动。本文件不复制，项目的 `README.md` 只有项目名和指向这里的一句，项目自己的说明写在那里。
 
 脚手架常带刚发布几天的版本，会被 `app/pnpm-workspace.yaml` 的 `minimumReleaseAge`（满 3 天才装）拦下。`dp new --astro` 会在终端里先装一次，被拦时 pnpm 会问放不放行，放行的包记进 `minimumReleaseAgeExclude`。容器启动时的安装没有终端，被拦就启动失败，`dp logs` 能看到。
 
@@ -70,7 +70,7 @@ DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
 
 ## 迁移已有项目
 
-1. 项目根复制本模板：`cp -R ~/Cores/Projects/docker-prototypes/templates/node/. .`，删掉原来的 `Dockerfile`、`docker-compose.yml`。
+1. 项目根复制本模板，本文件除外：`rsync -a --exclude /README.md ~/Cores/Projects/docker-prototypes/templates/node/ .`，删掉原来的 `Dockerfile`、`docker-compose.yml`。项目的 `README.md` 只写项目自己的内容，开发环境指向本文件。
 2. 源码 `git mv` 进 `app/`，原来的 `pnpm-workspace.yaml` 设置合进 `app/pnpm-workspace.yaml`。
 3. `cp .env.example .env`，填 `COMPOSE_PROJECT_NAME`。
 4. `app/package.json` 的 `packageManager` 写 `pnpm@<版本>`，版本用 `docker compose run --rm --no-deps app pnpm --version` 查。

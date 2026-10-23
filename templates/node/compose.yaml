@@ -9,11 +9,18 @@ services:
       TZ: ${TZ:-Asia/Tokyo}
       # Vite 默认只放行 localhost 和 IP，用 OrbStack 域名访问会返回 403
       __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS: .orb.local
-    # OrbStack 下用 https://<项目名>.orb.local 访问，不占宿主机端口。
-    # 要 localhost 加端口时在 .env 里启用 COMPOSE_FILE，合并 compose.ports.yaml
+    # OrbStack 下用 https://<项目名>.orb.local 访问，不占宿主机端口
     labels:
       - dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local
       - dev.orbstack.http-port=4321
+    # 开发服务器连得上才算启动成功：dp up、update 等它，起不来时报失败，不把反复重启当成正常。
+    # start_period 给首次装依赖留时间，这期间每 2 秒查一次，连上就算好
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/4321"]
+      start_period: 10m
+      start_interval: 2s
+      interval: 30s
+      retries: 3
     volumes:
       - ./app:/app
       - node_modules:/app/node_modules
@@ -23,8 +30,9 @@ services:
 
 volumes:
   node_modules:
-  # 所有 Node 项目共用，包只下载一次
+  # 所有 Node 项目共用，包只下载一次。external：dp 启动前会建好
   pnpm:
+    external: true
     name: pnpm
 
 networks:

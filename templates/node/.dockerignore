@@ -5,6 +5,9 @@ app/node_modules
 app/**/node_modules
 app/.env
 app/.env.*
+# wrangler 的本地密钥和本地状态
+app/.dev.vars
+app/.wrangler
 app/dist
 app/.output
 app/.astro

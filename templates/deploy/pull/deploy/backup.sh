@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 在服务器的部署目录（DEPLOY_DIR）里运行。dp backup 经 ssh 把本文件送过去执行，服务器上不用有这个文件。
-# 用法: backup.sh [项目]   不写就把下面 case 里的项目都备份一遍
+# 用法: backup.sh [备份项]   不写就把下面 case 里的各项都备份一遍
 # 约定：每生成一个备份文件，把它相对部署目录的路径打到标准输出，dp 按这些路径拉回本机；其他信息一律打到标准错误
 set -euo pipefail
 

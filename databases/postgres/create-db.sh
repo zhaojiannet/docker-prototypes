@@ -13,7 +13,7 @@ DB_PASS=${3:-}
 # 已有的用户可能正被别的库的应用用着，没给密码就不动它
 if [ -z "$(docker compose exec -T postgres psql -U "${POSTGRES_USER}" -d "${POSTGRES_DB}" -Atc \
 	"SELECT 1 FROM pg_roles WHERE rolname = '${DB_USER}'" </dev/null)" ]; then
-	DB_PASS=${DB_PASS:-$(openssl rand -base64 18)}
+	DB_PASS=${DB_PASS:-$(openssl rand -hex 24)}
 	set_user="CREATE USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"
 elif [ -n "$DB_PASS" ]; then
 	set_user="ALTER USER ${DB_USER} WITH PASSWORD '${DB_PASS}';"

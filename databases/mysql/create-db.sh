@@ -13,7 +13,7 @@ DB_PASS=${3:-}
 sql() { docker compose exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" "$@"; }
 # 已有的用户可能正被别的库的应用用着，没给密码就不动它
 if [ -z "$(sql -N -e "SELECT 1 FROM mysql.user WHERE user = '${DB_USER}' AND host = '%'" </dev/null)" ] || [ -n "$DB_PASS" ]; then
-	DB_PASS=${DB_PASS:-$(openssl rand -base64 18)}
+	DB_PASS=${DB_PASS:-$(openssl rand -hex 24)}
 	set_user="CREATE USER IF NOT EXISTS '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}'; ALTER USER '${DB_USER}'@'%' IDENTIFIED BY '${DB_PASS}';"
 fi
 

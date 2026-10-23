@@ -47,7 +47,7 @@ remote_targets() {
 # 会拼进远端命令的参数，只放行提交号、标签这类字符
 check_arg() {
 	case $1 in
-	*[!0-9A-Za-z._-]* | -*) die "版本 $1 里有不允许的字符" ;;
+	*[!0-9A-Za-z._-]* | -*) die "参数 $1 里有不允许的字符" ;;
 	esac
 }
 
@@ -109,8 +109,18 @@ patch_one() {
 }
 
 cmd_patch() {
-	local targets
-	targets=$(remote_targets "$@")
+	local found targets="" name
+	# 先赋值再循环：remote_targets 在子 shell 里 die 时，for 里的命令替换会吞掉失败
+	found=$(remote_targets "$@")
+	# 推送模式传的是静态文件，服务器上没有项目的镜像可拉
+	for name in $found; do
+		deploy_conf "$name"
+		if [ "$MODE" = pull ]; then
+			targets="$targets $name"
+		elif [ "${1:-}" != all ] && [ "${1:-}" != --host ]; then
+			die "$name 是推送模式，没有镜像，不用 patch"
+		fi
+	done
 	[ -n "$targets" ] || die "没有要处理的项目"
 	# shellcheck disable=SC2086
 	set -- $targets
@@ -124,8 +134,8 @@ status_one() {
 
 cmd_remote_status() {
 	local name hosts=""
-	[ $# -eq 0 ] || [ "$1" = --host ] || die "用法: dp remote-status [--host <ssh 别名>]"
-	if [ $# -ge 2 ]; then
+	[ $# -eq 0 ] || { [ "$1" = --host ] && [ $# -eq 2 ]; } || die "用法: dp remote-status [--host <ssh 别名>]"
+	if [ $# -eq 2 ]; then
 		hosts=$2
 	else
 		for name in $(list_projects); do
@@ -151,7 +161,8 @@ cmd_backup() {
 	item=${1:-}
 	deploy_conf "$name" || die "$name 的 .env 里没有 DEPLOY_MODE，不是部署到自建服务器的项目"
 	script=$DP_ROOT/$name/deploy/backup.sh
-	[ -f "$script" ] || die "$name 没有 deploy/backup.sh，照 templates/deploy 加上"
+	[ "$MODE" = pull ] || die "$name 是推送模式，产物随时能从提交重新构建，不用备份"
+	[ -f "$script" ] || die "$name 没有 deploy/backup.sh，照 templates/deploy/pull 加上"
 	[ -z "$item" ] || check_arg "$item"
 	dest=$DP_ROOT/backup/$name
 	mkdir -p "$dest"

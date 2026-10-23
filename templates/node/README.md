@@ -27,9 +27,8 @@ docker compose exec app sh
 
 浏览器打开 `https://<COMPOSE_PROJECT_NAME>.orb.local`。
 
-- 端口：容器内 4321（Astro 默认）。别的框架要么监听 4321，要么把 `compose.yaml` 的 `dev.orbstack.http-port` 和 `compose.ports.yaml` 冒号右边改成它的端口。
+- 端口：容器内 4321（Astro 默认）。别的框架要么监听 4321，要么把 `compose.yaml` 的 `dev.orbstack.http-port` 和 `healthcheck` 里的 `4321` 改成它的端口。
 - Vite 默认对 `.orb.local` 返回 403，`compose.yaml` 里的 `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` 放行了它，项目配置里不用写 `allowedHosts`。
-- 要 `localhost` 加端口时，在 `.env` 里打开 `COMPOSE_FILE` 和 `APP_PORT` 两行。
 
 ## 东西放哪
 
@@ -40,7 +39,9 @@ docker compose exec app sh
 | pnpm store 和缓存 | 所有 Node 项目共用的 volume `pnpm` |
 | `dist`、`.astro` 等构建产物 | `./app` 下，由项目的 `.gitignore` 忽略 |
 
-`docker compose down -v` 会连共用的 `pnpm` 一起删，它只是缓存，下次安装重新下载。
+`pnpm` 卷标了 `external`，`docker compose down -v` 只删本项目的 `node_modules`，不删它。
+
+`pnpm` 卷和 `docker-net` 网络由 `dp` 在启动前建好。不用 `dp`、直接 `docker compose up` 时，第一次先运行 `docker volume create pnpm` 和 `docker network create docker-net`。
 
 ## 连数据库
 
@@ -54,9 +55,9 @@ DATABASE_URL=postgresql://my_site:密码@postgres:5432/my_site
 
 ## 生产构建
 
-`Dockerfile` 有三段：`dev` 是开发容器，`build` 装依赖并 `pnpm build`，`runtime` 用 Caddy 托管静态文件。产物目录不是 `dist` 时加构建参数 `OUTPUT_DIR`。部署到 Cloudflare 这类平台的站点用不到后两段。
+`Dockerfile` 有四段：`dev` 是开发容器，`build` 装依赖并 `pnpm build`，`files` 只有构建产物（推送模式部署时导出到本机），`runtime` 用 Caddy 托管静态文件。产物目录不是 `dist` 时加构建参数 `OUTPUT_DIR`。部署到 Cloudflare 这类平台的站点用不到后三段。
 
-部署到自建服务器见仓库的 `templates/deploy/README.md`。
+部署到自建服务器见 docker-prototypes 仓库的 `templates/deploy/README.md`。
 
 ## 依赖更新
 

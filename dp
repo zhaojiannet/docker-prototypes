@@ -10,7 +10,7 @@ DP_YES=${DP_YES:-}
 
 usage() {
 	cat <<'EOF'
-用法: dp [-y] <命令> [参数]      -y 对 all 不再逐个确认
+用法: dp [-y] <命令> [参数]      -y 跳过批量操作前的确认
 
 项目（<项目> 是 ~/Cores/Projects 下的目录名，在项目目录里运行可省略；all 表示全部）
   new node <名字> [--astro [模板]]    从模板新建 Node 项目，--astro 顺带生成 Astro 站点
@@ -32,8 +32,9 @@ usage() {
 
 服务器（项目 .env 里写 DEPLOY_MODE、DEPLOY_HOST、DEPLOY_DIR 的才算，见 templates/deploy）
   deploy [<项目>|all] [版本] [--host <ssh 别名>]
+                                      推送模式写版本时只切到服务器上已有的那一版，不重新构建
   rollback <项目> <版本>
-  patch [<项目>|all] [--host <ssh 别名>]   代码不变，只拉镜像补丁并重启
+  patch [<项目>|all] [--host <ssh 别名>]   代码不变，只拉镜像补丁并重启（拉取模式）
   remote-status [--host <ssh 别名>]
   backup [<项目>] [备份项]             在服务器上执行项目的 deploy/backup.sh，拉回 ~/Cores/Projects/backup/<项目>/
 EOF
@@ -95,8 +96,16 @@ env_get() {
 	sed -n "s/^$2=//p" "$1" | tail -1 | sed -E "s/^\"(.*)\"\$/\\1/; s/^'(.*)'\$/\\1/"
 }
 
-ensure_network() {
+# ensure_shared [项目目录]：建好共用的网络和缓存卷。缓存卷在模板里标成 external，
+# compose 自己建的卷会记住第一个建它的项目，别的项目每次启动都要警告一遍
+ensure_shared() {
+	local v vols
 	docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net >/dev/null
+	# 先取出来再循环：compose 文件写错时要报出来停下，不能当成没有共享卷接着启动
+	vols=$(cd "${1:-.}" && docker compose config --volumes)
+	for v in $vols; do
+		case $v in pnpm | go-mod | go-build) docker volume create "$v" >/dev/null ;; esac
+	done
 }
 
 # run_each <函数> <项目...>：逐个执行，一个失败不影响后面的，最后汇总，有失败就返回 1

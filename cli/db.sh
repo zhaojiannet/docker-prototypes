@@ -39,7 +39,7 @@ db_new() {
 		/^[A-Z_]*PASSWORD=/ { cmd | getline pw; close(cmd); sub(/=.*/, "=" pw) }
 		{ print }' "$dir/.env.example" > "$dir/.env"
 	chmod 600 "$dir/.env"
-	ensure_network
+	ensure_shared "$dir"
 	docker volume create "$volume" >/dev/null
 	(cd "$dir" && docker compose up -d --wait)
 	echo "已在 $dir 启动，密码在 $dir/.env"

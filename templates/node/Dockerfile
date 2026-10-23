@@ -14,11 +14,13 @@ ENV NODE_USE_SYSTEM_CA=1 \
     pnpm_config_confirm_modules_purge=false \
     PATH=/home/node/.local/share/pnpm/bin:$PATH
 
-# 这里装的 pnpm 只负责启动，项目实际用 package.json 里 packageManager 写的版本，pnpm 会自己下载切换
+# 这里装的 pnpm 只负责启动，项目实际用 package.json 里 packageManager 写的版本，pnpm 会自己下载切换。
+# --before 和 pnpm-workspace.yaml 的 minimumReleaseAge 一样只取发布满 3 天的版本：
+# dp new 把这个版本写进 packageManager，取到刚发布的就绕过了考察期
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
-    && npm install -g pnpm \
+    && npm install -g pnpm --before="$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)" \
     && npm cache clean --force
 
 # 这两个目录会被 volume 覆盖；空 volume 首次挂载继承镜像里同路径的属主，不预建就是 root 的
@@ -28,8 +30,10 @@ RUN mkdir -p /app/node_modules /home/node/.local/share/pnpm \
 USER node
 WORKDIR /app
 
-# 开发服务器要监听 0.0.0.0，宿主机才访问得到
-CMD ["sh", "-c", "pnpm install && exec pnpm dev --host"]
+# 开发服务器要监听 0.0.0.0，宿主机才访问得到。
+# CUSTOM: Astro 的 .astro/dev.json 记着上次的进程号，容器停掉时不删；新容器的进程号从头分配，
+# 撞上就以为服务器还在、拒绝启动。容器刚起来时不可能已有服务器，留下的一定是旧的
+CMD ["sh", "-c", "rm -f .astro/dev.json && pnpm install && exec pnpm dev --host"]
 
 
 FROM dev AS build
@@ -39,6 +43,12 @@ COPY --chown=node:node app/package.json app/pnpm-lock.yaml app/pnpm-workspace.ya
 RUN pnpm install --frozen-lockfile
 COPY --chown=node:node app/ ./
 RUN pnpm build
+
+
+# 只有构建产物，推送模式部署（docker-prototypes 的 templates/deploy/push）用 --output 导出到本机再 rsync 到服务器
+FROM scratch AS files
+ARG OUTPUT_DIR=dist
+COPY --from=build /app/${OUTPUT_DIR} /
 
 
 FROM caddy:alpine AS runtime

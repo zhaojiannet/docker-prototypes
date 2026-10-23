@@ -8,7 +8,7 @@ PostgreSQL 18 开发环境，镜像标签 `postgres:18-trixie`。数据在 named
 
 ```bash
 cp .env.example .env
-# 改 .env 里的密码，可以用 openssl rand -base64 24 生成
+# 改 .env 里的密码，可以用 openssl rand -hex 24 生成
 docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
 docker volume create postgres-data     # 只在第一次需要，卷已存在时什么也不做
 docker compose up -d --wait
@@ -76,13 +76,13 @@ docker compose exec postgres pg_restore -U postgres -d 库名 --no-owner /backup
 
 ## 扩展
 
-`init-scripts/01-init-extensions.sql` 只在**首次初始化**时对默认库执行一次，装了 uuid-ossp、pgcrypto、pg_trgm、btree_gin、btree_gist。
-
-后来新建的库不会自动带这些扩展，要自己装：
+实例不预装扩展，哪个库要用就在那个库里装，最好写进项目自己的迁移脚本，换机器、重建库时会跟着走：
 
 ```bash
-docker compose exec postgres psql -U postgres -d 库名 -c 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";'
+docker compose exec postgres psql -U postgres -d 库名 -c 'CREATE EXTENSION IF NOT EXISTS pg_trgm;'
 ```
+
+生成 UUID 用自带的 `gen_random_uuid()`、`uuidv7()`，不用装 uuid-ossp、pgcrypto。
 
 ## 升级
 

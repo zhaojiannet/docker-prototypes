@@ -49,7 +49,8 @@ step() { printf '\n=== %s\n' "$1"; }
 
 step "软件包"
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl openssh-server ufw unattended-upgrades fail2ban >/dev/null
+# rsync：推送模式部署静态站点时用
+apt-get install -y -qq ca-certificates curl openssh-server rsync ufw unattended-upgrades fail2ban >/dev/null
 
 SSH_CONF=/etc/ssh/sshd_config.d/99-server-setup.conf
 SOCKET_OVERRIDE=/etc/systemd/system/ssh.socket.d/override.conf
@@ -81,6 +82,7 @@ step "SSH：端口 ${ports}，只用密钥登录"
 if [ ! -s "$LOGIN_HOME/.ssh/authorized_keys" ]; then
 	# 没有密钥就关掉密码登录，会把自己锁在门外
 	echo "跳过：$LOGIN_USER 的 ~/.ssh/authorized_keys 是空的，先配好密钥再重跑" >&2
+	ssh_skipped=yes
 else
 	if [ "$LOGIN_USER" = root ]; then
 		# 直接用 root 登录的服务器，禁掉 root 就没人能登录；只禁密码，留密钥
@@ -173,7 +175,9 @@ Unattended-Upgrade::Automatic-Reboot-Time "${REBOOT_TIME}";
 EOF
 unattended-upgrade --dry-run --debug 2>&1 | grep -E 'Allowed origins are' || true
 
-if [ -n "$keep22" ]; then
+if [ -n "${ssh_skipped:-}" ]; then
+	printf '\n=== 完成，但 SSH 没有配置：配好 %s 的 ~/.ssh/authorized_keys 后重跑本脚本\n' "$LOGIN_USER"
+elif [ -n "$keep22" ]; then
 	if [ -f "$SOCKET_OVERRIDE" ]; then
 		close22="sudo sed -i -e '/^ListenStream=0\\.0\\.0\\.0:22\$/d' -e '/^ListenStream=\\[::\\]:22\$/d' $SOCKET_OVERRIDE
     sudo systemctl daemon-reload && sudo systemctl restart ssh.socket"

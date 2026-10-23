@@ -2,8 +2,7 @@
 # 从备份恢复，覆盖已有的库之前先把它再备份一份到 backups/
 # 用法: ./restore.sh 备份文件 [库名]
 #   单库备份（<库名>_<时间>.sql[.gz]）：恢复成同名库
-#   整库备份（all_databases_<时间>.sql[.gz]）：给了库名只恢复这一个库；
-#     不给就整个导入，只用于新实例，实例里已经有别的库时拒绝
+#   整库备份（all_databases_<时间>.sql[.gz]）：整个导入，只用于新实例，实例里已经有别的库时拒绝
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./.env
@@ -28,6 +27,11 @@ confirm() {
 snapshot() {
 	local out
 	out="backups/${1}_$(date +%Y%m%d_%H%M%S)_before-restore.sql.gz"
+	# 同一秒里第二次恢复同一个库时等到下一秒，不覆盖前一份快照
+	while [ -e "$out" ]; do
+		sleep 1
+		out="backups/${1}_$(date +%Y%m%d_%H%M%S)_before-restore.sql.gz"
+	done
 	docker compose exec -T postgres pg_dump -U "${POSTGRES_USER}" --create -d "$1" </dev/null | gzip > "$out"
 	echo "已备份当前的 $1 到 $out"
 }
@@ -39,19 +43,27 @@ drop_db() { psql_admin -d postgres -c "DROP DATABASE IF EXISTS $1 WITH (FORCE)" 
 base=$(basename "$FILE")
 case $base in
 all_databases_*)
-	if [ -z "$DB_NAME" ]; then
-		others=$(query \
-			"SELECT string_agg(datname, ' ') FROM pg_database WHERE NOT datistemplate AND datname NOT IN ('postgres', '${POSTGRES_DB}')")
-		if [ -n "$others" ]; then
-			echo "实例里已经有这些库：${others}。整个导入只用于新实例，要恢复其中一个库就带上库名" >&2
-			exit 1
-		fi
-		confirm "要把 $FILE 整个导入这个实例，"
-		# 角色 postgres 已存在，导入时会报一条 already exists，属正常，所以不在出错时停下
-		read_file | docker compose exec -T postgres psql -q -U "${POSTGRES_USER}" -d postgres
-		echo "导入完成"
-		exit 0
+	# 不从整库备份里切出单个库：函数的代码原样导出，里面可以伪造分库的注释行，
+	# 切出来的内容会以超级用户执行
+	[ -z "$DB_NAME" ] || { echo "整库备份只能整个导入新实例；恢复单个库要用单库备份（dp db backup <类型> <库名>）" >&2; exit 1; }
+	others=$(query \
+		"SELECT string_agg(datname, ' ') FROM pg_database WHERE NOT datistemplate AND datname NOT IN ('postgres', '${POSTGRES_DB}')")
+	if [ -n "$others" ]; then
+		echo "实例里已经有这些库：${others}。整个导入只用于新实例" >&2
+		exit 1
 	fi
+	# POSTGRES_DB 是启动时自动建的，库在不代表是空的；里面已有表时导入会和备份里的同名表混在一起
+	if [ -n "$(psql_admin -d "${POSTGRES_DB}" -Atc \
+		"SELECT 1 FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog', 'information_schema') LIMIT 1" </dev/null)" ]; then
+		echo "库 ${POSTGRES_DB} 里已经有表。整个导入只用于新实例" >&2
+		exit 1
+	fi
+	confirm "要把 $FILE 整个导入这个实例，"
+	# 新实例启动时已经建好超级用户和 POSTGRES_DB，备份里建它们的语句会报 already exists；
+	# 只滤掉这两句，其余出错就停
+	read_file | grep -vE "^CREATE ROLE \"?${POSTGRES_USER}\"?;\$|^CREATE DATABASE \"?${POSTGRES_DB}\"? WITH " | psql_admin -d postgres
+	echo "导入完成"
+	exit 0
 	;;
 *)
 	inferred=$(printf '%s\n' "$base" | sed -nE 's/^(.+)_[0-9]{8}_[0-9]{6}(_before-restore)?\.sql(\.gz)?$/\1/p')
@@ -64,23 +76,13 @@ all_databases_*)
 	;;
 esac
 
-# pg_dumpall 里 postgres 库那段没有建库语句，删库重建也都要连着它
+# 删库重建都要连着 postgres 库
 [ "$DB_NAME" != postgres ] || { echo "postgres 是维护库，不能用这个脚本恢复" >&2; exit 1; }
 
-# 要恢复的 SQL 只解压一次，写到临时文件：单个库就可能有几 GB，放进变量会占满内存，反复解压又慢
+# 要恢复的 SQL 只解压一次，写到临时文件：后面查建库语句、查属主、导入都要读它，反复解压慢
 sql=$(mktemp backups/.restore.XXXXXX)
 trap 'rm -f "$sql"' EXIT
-case $base in
-all_databases_*)
-	# pg_dumpall 里每个库是一段完整的 pg_dump --create 输出，从「-- Database "库名" dump」开始，到下一个库或结尾为止
-	read_file | awk -v db="$DB_NAME" '
-		/^-- Database ".*" dump$/ { on = ($0 == "-- Database \"" db "\" dump") }
-		/^-- PostgreSQL database cluster dump complete$/ { on = 0 }
-		on' >"$sql"
-	[ -s "$sql" ] || { echo "$FILE 里没有库 $DB_NAME" >&2; exit 1; }
-	;;
-*) read_file >"$sql" ;;
-esac
+read_file >"$sql"
 
 if grep -q '^CREATE DATABASE ' "$sql"; then
 	# 备份里带建库语句和库级权限：删掉旧库，由备份重建。

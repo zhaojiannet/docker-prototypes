@@ -2,12 +2,13 @@
 # 从备份恢复，覆盖已有的库之前先把它再备份一份到 backups/
 # 用法: ./restore.sh 备份文件 [库名]
 #   单库备份（<库名>_<时间>.sql[.gz]）：恢复成同名库，库要已存在（用 create-db.sh 建）
-#   整库备份（all_databases_<时间>.sql[.gz]）：给了库名只恢复这一个库；
-#     不给就整个导入，只用于新实例，实例里已经有别的库时拒绝
+#   整库备份（all_databases_<时间>.sql[.gz]）：整个导入，只用于新实例，实例里已经有别的库时拒绝
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./.env
 
+# 和 mysql/restore.sh 只有下面几行不同，正文保持同一份：GTID 过滤只对 MySQL 的备份起作用，
+# 重建 healthcheck 用户只对 MariaDB 起作用，在另一种库上什么也不做
 SERVICE=mariadb
 CLIENT=mariadb
 DUMP=mariadb-dump
@@ -39,6 +40,11 @@ confirm() {
 snapshot() {
 	local out
 	out="backups/${1}_$(date +%Y%m%d_%H%M%S)_before-restore.sql.gz"
+	# 同一秒里第二次恢复同一个库时等到下一秒，不覆盖前一份快照
+	while [ -e "$out" ]; do
+		sleep 1
+		out="backups/${1}_$(date +%Y%m%d_%H%M%S)_before-restore.sql.gz"
+	done
 	docker compose exec -T "$SERVICE" "$DUMP" -uroot -p"${ROOT_PASSWORD}" "${DUMP_OPTS[@]}" "$1" </dev/null | gzip > "$out"
 	echo "已备份当前的 $1 到 $out"
 }
@@ -46,51 +52,33 @@ snapshot() {
 base=$(basename "$FILE")
 case $base in
 all_databases_*)
-	if [ -z "$DB_NAME" ]; then
-		others=$(query "SELECT GROUP_CONCAT(SCHEMA_NAME SEPARATOR ' ') FROM information_schema.SCHEMATA
-			WHERE SCHEMA_NAME NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys', '${DEFAULT_DB}')")
-		if [ -n "$others" ] && [ "$others" != NULL ]; then
-			echo "实例里已经有这些库：${others}。整个导入只用于新实例，要恢复其中一个库就带上库名" >&2
-			exit 1
-		fi
-		confirm "要把 $FILE 整个导入这个实例（含用户和权限，root 密码也会变成备份时的值），"
-		read_file | sql
-		# 备份里的 healthcheck 用户带着原实例的密码（原实例没有时就缺这几个用户），和本实例数据目录里
-		# .my-healthcheck.cnf 的对不上，镜像自带的健康检查会一直失败，所以按 cnf 重建。
-		# 要在 FLUSH 之前做：刷新后 root 就换成备份里的密码，.env 里的登不上。MySQL 镜像没有这个文件，跳过
-		docker compose exec -T "$SERVICE" sh -s "$CLIENT" "$ROOT_PASSWORD" <<-'EOSH'
-			cnf=/var/lib/mysql/.my-healthcheck.cnf
-			[ -f "$cnf" ] || exit 0
-			pw=$(sed -n 's/^password=//p' "$cnf")
-			for h in 127.0.0.1 ::1 localhost; do
-				echo "CREATE OR REPLACE USER healthcheck@'$h' IDENTIFIED BY '$pw';"
-				echo "GRANT USAGE ON *.* TO healthcheck@'$h';"
-			done | "$1" -uroot -p"$2"
-		EOSH
-		# 导入只改了 mysql 库里的权限表，不刷新的话恢复出来的用户登不上
-		query "FLUSH PRIVILEGES"
-		echo "导入完成。root 密码若和 .env 里的不同，把 .env 改成备份时的密码"
-		exit 0
-	fi
-	# 整库备份里每个库从「-- Current Database: `库名`」开始，到下一个库为止；
-	# 开头那段 SET 语句（字符集、关外键检查）要一起带上。
-	# 单个库就可能有几 GB，放进变量会占满内存，所以写到临时文件
-	section=$(mktemp backups/.restore.XXXXXX)
-	trap 'rm -f "$section"' EXIT
-	read_file | awk -v db="$DB_NAME" '
-		/^-- Current Database: `.*`$/ { seen = 1; on = ($0 == "-- Current Database: `" db "`") }
-		!seen || on' >"$section"
-	if ! grep "^-- Current Database: \`${DB_NAME}\`$" "$section" >/dev/null; then
-		echo "$FILE 里没有库 $DB_NAME" >&2
+	# 不从整库备份里切出单个库：存储过程的代码原样导出，里面可以伪造分库的注释行，
+	# 切出来的内容会以 root 执行
+	[ -z "$DB_NAME" ] || { echo "整库备份只能整个导入新实例；恢复单个库要用单库备份（dp db backup <类型> <库名>）" >&2; exit 1; }
+	others=$(query "SELECT GROUP_CONCAT(SCHEMA_NAME SEPARATOR ' ') FROM information_schema.SCHEMATA
+		WHERE SCHEMA_NAME NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys', '${DEFAULT_DB}')")
+	if [ -n "$others" ] && [ "$others" != NULL ]; then
+		echo "实例里已经有这些库：${others}。整个导入只用于新实例" >&2
 		exit 1
 	fi
-	if db_exists "$DB_NAME"; then
-		confirm "要用 $FILE 覆盖库 ${DB_NAME}，"
-		snapshot "$DB_NAME"
-		query "DROP DATABASE \`${DB_NAME}\`"
-	fi
-	# 这段里自带 CREATE DATABASE 和 USE；用户和权限在 mysql 库里，按库名授权，删库重建后仍然有效
-	sql <"$section"
+	confirm "要把 $FILE 整个导入这个实例（含用户和权限，root 密码也会变成备份时的值），"
+	read_file | sql
+	# 备份里的 healthcheck 用户带着原实例的密码（原实例没有时就缺这几个用户），和本实例数据目录里
+	# .my-healthcheck.cnf 的对不上，镜像自带的健康检查会一直失败，所以按 cnf 重建。
+	# 要在 FLUSH 之前做：刷新后 root 就换成备份里的密码，.env 里的登不上。MySQL 镜像没有这个文件，跳过
+	docker compose exec -T "$SERVICE" sh -s "$CLIENT" "$ROOT_PASSWORD" <<-'EOSH'
+		cnf=/var/lib/mysql/.my-healthcheck.cnf
+		[ -f "$cnf" ] || exit 0
+		pw=$(sed -n 's/^password=//p' "$cnf")
+		for h in 127.0.0.1 ::1 localhost; do
+			echo "CREATE OR REPLACE USER healthcheck@'$h' IDENTIFIED BY '$pw';"
+			echo "GRANT USAGE ON *.* TO healthcheck@'$h';"
+		done | "$1" -uroot -p"$2"
+	EOSH
+	# 导入只改了 mysql 库里的权限表，不刷新的话恢复出来的用户登不上
+	query "FLUSH PRIVILEGES"
+	echo "导入完成。root 密码若和 .env 里的不同，把 .env 改成备份时的密码"
+	exit 0
 	;;
 *)
 	inferred=$(printf '%s\n' "$base" | sed -nE 's/^(.+)_[0-9]{8}_[0-9]{6}(_before-restore)?\.sql(\.gz)?$/\1/p')

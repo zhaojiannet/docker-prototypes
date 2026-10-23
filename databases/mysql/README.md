@@ -8,7 +8,7 @@ MySQL 9.7 开发环境，镜像标签 `mysql:9.7`，9.7 是长期支持版。数
 
 ```bash
 cp .env.example .env
-# 改 .env 里的两个密码，可以用 openssl rand -base64 24 生成
+# 改 .env 里的两个密码，可以用 openssl rand -hex 24 生成
 docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
 docker volume create mysql-data     # 只在第一次需要，卷已存在时什么也不做
 docker compose up -d --wait

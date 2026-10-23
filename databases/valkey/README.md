@@ -10,7 +10,7 @@ Valkey 9.1 开发环境，镜像标签 `valkey/valkey:9.1-trixie`。Valkey 是 R
 
 ```bash
 cp .env.example .env
-# 改 .env 里的密码，可以用 openssl rand -base64 24 生成
+# 改 .env 里的密码，可以用 openssl rand -hex 24 生成
 docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
 docker volume create valkey-data     # 只在第一次需要，卷已存在时什么也不做
 docker compose up -d --wait
@@ -41,7 +41,7 @@ docker compose exec valkey sh -c 'valkey-cli --no-auth-warning -a "$VALKEY_PASSW
 AOF 和 RDB 两个都开着：
 
 - **AOF**（`/data/appendonlydir/`）记录每一条写命令，每秒刷一次盘，最多丢一秒的数据。恢复时优先用它。
-- **RDB**（`/data/dump.rdb`）是定时快照，作为第二份保险。900 秒内有 1 次写、300 秒内有 10 次、60 秒内有 10000 次，各存一次。
+- **RDB**（`/data/dump.rdb`）是定时快照，作为第二份保险，按 Valkey 默认的频率存：1 小时内有 1 次写、5 分钟内有 100 次、1 分钟内有 10000 次。
 
 想立刻存一次快照：
 
@@ -59,4 +59,4 @@ docker compose exec valkey sh -c 'valkey-cli --no-auth-warning -a "$VALKEY_PASSW
 
 - 密码不写在 `conf/valkey.conf` 里，而是 compose 启动时用 `--requirepass` 从 `.env` 传进去，配置文件才能安全地进版本库。
 - 健康检查必须带密码。设了 `requirepass` 之后，不带密码的 `ping` 会返回 NOAUTH，健康检查会一直失败。
-- 内存上限 512MB，满了按最近最少使用淘汰（`allkeys-lru`）。当缓存用没问题；如果要当数据库存不能丢的数据，把 `conf/valkey.conf` 里的 `maxmemory-policy` 改成 `noeviction`。
+- 内存用 Valkey 的默认设置：不设上限，也不会自动删数据。只拿来做缓存、希望满了自动清旧数据的项目，在 `conf/valkey.conf` 里加 `maxmemory` 和 `maxmemory-policy allkeys-lru`。

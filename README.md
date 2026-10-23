@@ -8,11 +8,11 @@ Node、Go 项目和数据库的 Docker 模板，加一个管理它们的命令 `
 dp                 命令入口，./dp help 看全部用法
 cli/               dp 的子命令：project.sh、db.sh、remote.sh
 templates/
-  node/            Node 项目：Dockerfile（开发、构建、Caddy 运行三段）、compose、Dependabot 配置
+  node/            Node 项目：Dockerfile（开发、构建、产物、Caddy 运行四段）、compose、Dependabot 配置
   go/              Go 项目：Dockerfile（开发、构建、distroless 运行三段）、compose、Dependabot 配置
   deploy/          部署到自建服务器的两种做法：pull/、push/，见其中的 README
 databases/
-  postgres/ mariadb/ mysql/ valkey/   每种一个 compose 加建库、删库、查用户、备份、恢复脚本
+  postgres/ mariadb/ mysql/ valkey/   每种一个 compose；三种 SQL 数据库加建库、删库、查用户、备份、恢复脚本
 server/setup.sh    新服务器初始化
 tests/             端到端测试：e2e.sh 是入口，cases.sh 是用例
 docs/design.md     每条决定和依据
@@ -103,10 +103,8 @@ tests/e2e.sh postgres remote                            # 只跑几组，两种�
 ## 仓库的 CI
 
 - `test.yml`：推送、PR、每周一跑 shellcheck、actionlint 和端到端测试。基础镜像跟官方浮动，每周跑一次能在项目更新之前发现新版本带来的问题。
-
 - `db-eol.yml`：每周一查 `databases/` 里各数据库版本线的停止支持日期（endoflife.date），不到半年就开 issue。
 - `scan.yml`：推送和 PR 时跑 gitleaks。
-- `images.yml` 和 `images/`：自建的 Node、Go 基础镜像，给还没换成 `templates/` 写法的项目用。
 
 ## 不入库的东西
 

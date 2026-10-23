@@ -36,6 +36,7 @@ for repo in $(docker compose config --images | grep ":${SHA}$" | sed "s/:${SHA}$
 	for img in $(docker images "$repo" --format '{{.Repository}}:{{.Tag}}'); do
 		case ${img##*:} in
 		"$SHA" | "$PREV") ;;
+		# 还有容器（比如停着的 compose run）用着的删不掉，留到下次再清，不影响这次发布
 		*) docker rmi "$img" >/dev/null 2>&1 || true ;;
 		esac
 	done

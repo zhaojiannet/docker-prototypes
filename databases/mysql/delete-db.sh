@@ -11,11 +11,8 @@ DB_USER=${2:-}
 read -r -p "要删除数据库 ${DB_NAME}${DB_USER:+ 和用户 ${DB_USER}}，确认吗? [y/N] " ans
 [ "$ans" = "y" ] || [ "$ans" = "Y" ] || { echo "已取消"; exit 1; }
 
-STAMP=$(date +%Y%m%d_%H%M%S)
-echo "先备份到 backups/${DB_NAME}_${STAMP}.sql"
-docker compose exec -T mysql mysqldump -uroot -p"${MYSQL_ROOT_PASSWORD}" \
-	--single-transaction --routines --triggers --events --set-gtid-purged=OFF "${DB_NAME}" \
-	> "backups/${DB_NAME}_${STAMP}.sql"
+# 和单库备份同一个格式，dp db restore 认得
+./backup.sh "${DB_NAME}"
 
 docker compose exec -T mysql mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<-EOSQL
 	DROP DATABASE IF EXISTS \`${DB_NAME}\`;

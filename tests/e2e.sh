@@ -8,7 +8,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=$PWD
-FIXED_VOLUMES="pnpm go-mod go-build postgres-data mariadb-data mysql-data valkey-data"
+FIXED_VOLUMES="pnpm go-mod go-build postgres-data mariadb-data mysql-data valkey-data dp-e2e-srv"
 FIXED_CONTAINERS="postgres mariadb mysql valkey"
 
 if [ -n "${E2E_MACHINE:-}" ]; then
@@ -57,12 +57,12 @@ cleanup() {
 		esac
 	done
 	# shellcheck disable=SC2086
-	docker rm -f -v dp-e2e-server dp-e2e-registry dp-e2e-curl $FIXED_CONTAINERS >/dev/null 2>&1
+	docker rm -f -v dp-e2e-server dp-e2e-registry dp-e2e-curl dp-e2e-static $FIXED_CONTAINERS >/dev/null 2>&1
 	# shellcheck disable=SC2086
 	docker volume rm $FIXED_VOLUMES >/dev/null 2>&1
 	docker volume ls -q | grep -E '^(web|web2|web3|api|pushapp)_' | xargs -r docker volume rm >/dev/null 2>&1
 	wipe_work
-	docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(e2e-|127\.0\.0\.1:5000/|web|api|dp-e2e-)' | xargs -r docker rmi -f >/dev/null 2>&1
+	docker images --format '{{.Repository}}:{{.Tag}}' | grep -E '^(e2e-|127\.0\.0\.1:5000/|web|api|pushapp|dp-e2e-)' | xargs -r docker rmi -f >/dev/null 2>&1
 }
 [ -n "${E2E_KEEP:-}" ] || trap cleanup EXIT
 
@@ -87,7 +87,7 @@ run_as_tester dp-e2e-runner ssh-keygen -q -t ed25519 -N "" -f "$WORK/home/id_ed2
 docker run -d --name dp-e2e-registry -p 127.0.0.1:5000:5000 registry:3 >/dev/null
 # shellcheck disable=SC2086
 docker run -d --name dp-e2e-server --network docker-net $SERVER_PUBLISH \
-	-v /var/run/docker.sock:/var/run/docker.sock -v "$WORK:$WORK" dp-e2e-server >/dev/null
+	-v /var/run/docker.sock:/var/run/docker.sock -v "$WORK:$WORK" -v dp-e2e-srv:/srv dp-e2e-server >/dev/null
 docker exec dp-e2e-server sh -c "cp '$WORK/home/id_ed25519.pub' /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys"
 # 开发服务器、生产镜像的地址只在 docker-net 里解析得到，访问都从这个容器发出
 docker run -d --name dp-e2e-curl --network docker-net dp-e2e-runner sleep infinity >/dev/null

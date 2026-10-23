@@ -5,8 +5,13 @@ set -euo pipefail
 cd "$(dirname "$0")"
 . ./.env
 
-STAMP=$(date +%Y%m%d_%H%M%S)
 DB_NAME=${1:-}
+# 文件名只精确到秒，同一秒里再备份同一个库时等到下一秒，不覆盖前一份
+STAMP=$(date +%Y%m%d_%H%M%S)
+while [ -e "backups/${DB_NAME:-all_databases}_${STAMP}.sql.gz" ]; do
+	sleep 1
+	STAMP=$(date +%Y%m%d_%H%M%S)
+done
 
 if [ -z "$DB_NAME" ]; then
 	OUT="backups/all_databases_${STAMP}.sql"

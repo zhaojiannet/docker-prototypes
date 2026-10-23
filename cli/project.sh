@@ -63,7 +63,7 @@ cmd_new() {
 	cp -R "$DP_HOME/templates/$kind/." "$dir/"
 	mkdir -p "$dir/app"
 	write_env "$dir" "$name"
-	ensure_network
+	ensure_shared "$dir"
 	cd "$dir" || exit
 
 	if [ "$kind" = node ]; then
@@ -71,7 +71,9 @@ cmd_new() {
 			# /app/node_modules 是挂载点，脚手架会把 /app 当成非空目录拒绝，先生成到临时目录再拷进来
 			docker compose run --rm --no-deps app sh -c "pnpm create astro@latest /tmp/site --template '$astro' --no-install --no-git --yes >/dev/null && cp -a /tmp/site/. /app/ && rm -rf /tmp/site"
 		else
-			docker compose run --rm --no-deps app pnpm init >/dev/null
+			# pnpm init 默认把仓库里最新的 pnpm 钉进 devEngines，刚发布的版本之后每条命令都要下载，
+			# 会被 minimumReleaseAge 拦下；版本由下一行按镜像里的写
+			docker compose run --rm --no-deps app pnpm init --no-init-package-manager >/dev/null
 		fi
 		# 写上镜像里 pnpm 的版本，之后由 Dependabot 跟新版本
 		docker compose run --rm --no-deps app sh -c 'pnpm pkg set packageManager="pnpm@$(pnpm --version)"'
@@ -83,7 +85,23 @@ cmd_new() {
 		# 容器启动时的安装没有终端，没法确认；这里在终端里先装一次，由人决定放不放行
 		docker compose run --rm --no-deps app pnpm install
 	else
-		docker compose run --rm --no-deps app sh -c "go mod init '${module:-$name}' && go get -tool github.com/air-verse/air@latest"
+		# CUSTOM: Go 没有「发布满几天才用」的设置，@latest 会取到刚发布的版本；
+		# 和 pnpm 的 minimumReleaseAge 一样只取满 3 天的，之后由 Dependabot 按冷却期更新
+		docker compose run --rm --no-deps -T app sh -s -- "${module:-$name}" <<-'EOF'
+			set -e
+			go mod init "$1"
+			cutoff=$(date -u -d '3 days ago' +%Y-%m-%dT%H:%M:%SZ)
+			# go list 的版本已按语义版本从小到大排好，倒过来从最新的试；带 - 的是预发布版，跳过
+			for v in $(go list -m -versions github.com/air-verse/air | tr ' ' '\n' | tail -n +2 | grep -v -- - | tac); do
+				t=$(go list -m -f '{{.Time.UTC.Format "2006-01-02T15:04:05Z"}}' "github.com/air-verse/air@$v")
+				if [ "$t" \< "$cutoff" ]; then
+					go get -tool "github.com/air-verse/air@$v"
+					exit 0
+				fi
+			done
+			echo "air 没有发布满 3 天的版本" >&2
+			exit 1
+		EOF
 	fi
 
 	docker compose up -d
@@ -104,7 +122,7 @@ cmd_copy() {
 		while IFS= read -r -d '' f; do if [ -e "$f" ] || [ -L "$f" ]; then printf '%s\0' "$f"; fi; done |
 		tar --null -T - -cf -) | tar -xf - -C "$dir"
 	write_env "$dir" "$name"
-	ensure_network
+	ensure_shared "$dir"
 	(cd "$dir" && docker compose up -d)
 	echo "已从 $from 复制出 ${dir}。.env 和 app/.env 这类密钥文件没有复制；package.json 等文件里的项目名要自己改"
 }
@@ -116,12 +134,13 @@ cmd_clone() {
 	dir=$(new_target "$name")
 	git clone "$url" "$dir"
 	write_env "$dir" "$name"
-	ensure_network
+	ensure_shared "$dir"
 	(cd "$dir" && docker compose up -d)
 	echo "已克隆到 ${dir}。app/.env 这类不进 git 的密钥文件要另外拷过来"
 }
 
-compose_up() { ensure_network && docker compose up -d; }
+# --wait：有健康检查的服务（开发容器、数据库）等到通过才算成功，起不来时报失败
+compose_up() { ensure_shared && docker compose up -d --wait; }
 compose_down() { docker compose down; }
 compose_restart() { docker compose restart; }
 compose_status() { docker compose ps -a; }
@@ -129,8 +148,8 @@ compose_status() { docker compose ps -a; }
 compose_update() {
 	docker compose pull --ignore-buildable
 	docker compose build --pull
-	ensure_network
-	docker compose up -d
+	ensure_shared
+	docker compose up -d --wait
 }
 
 run_compose() { cd "$DP_ROOT/$1" && "compose_$DP_ACTION"; }

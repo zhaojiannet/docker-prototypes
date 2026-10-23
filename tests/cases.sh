@@ -77,6 +77,8 @@ edit() {
 	mv "$2.tmp" "$2"
 }
 mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+# 按备份文件名的格式写出某个 Unix 时间
+stamp_of() { date -d "@$1" +%Y%m%d_%H%M%S 2>/dev/null || date -r "$1" +%Y%m%d_%H%M%S; }
 
 git_commit() {
 	git -C "$1" add -A
@@ -86,6 +88,8 @@ git_commit() {
 group_project() {
 	"$DP" help >/dev/null
 
+	# 日常的机器上 pnpm 卷往往是别的项目的 compose 先建的，带着那个项目的标签
+	docker volume create --label com.docker.compose.project=other-project pnpm >/dev/null
 	"$DP" new node web
 	cd "$P/web"
 	cat >app/server.cjs <<'EOF'
@@ -96,6 +100,13 @@ EOF
 	# 在项目目录里不写项目名
 	"$DP" up
 	expect_http http://web-app-1:4321 'node-ok Asia/Tokyo'
+	# 上个容器留下的 Astro 锁，进程号 1 在新容器里一定存在
+	mkdir -p app/.astro
+	printf '{"pid":1}' >app/.astro/dev.json
+	"$DP" restart
+	expect_http http://web-app-1:4321 node-ok
+	[ ! -e app/.astro/dev.json ] || fail "重启后旧的 Astro 锁文件还在"
+	ok "启动时清掉旧的 Astro 锁文件"
 	[ -f app/pnpm-lock.yaml ] || fail "没有生成 app/pnpm-lock.yaml，生产构建的 COPY 会失败"
 	docker build -q --target runtime -t e2e-web:rt . >/dev/null
 	docker run -d --name e2e-web-rt --network docker-net e2e-web:rt >/dev/null
@@ -103,6 +114,8 @@ EOF
 	docker rm -f e2e-web-rt >/dev/null
 
 	"$DP" new go api --module example.com/api
+	airv=$(awk '$1 == "github.com/air-verse/air" { print $2 }' "$P/api/app/go.mod")
+	case $airv in v*-*) fail "air 装成了预发布版 ${airv}" ;; v*) ok "air 装的是正式版" ;; *) fail "go.mod 里没有 air" ;; esac
 	mkdir -p "$P/api/app/cmd/api"
 	cat >"$P/api/app/cmd/api/main.go" <<'EOF'
 package main
@@ -140,6 +153,22 @@ EOF
 	[ ! -e "$P/web2/app/.env" ] || fail "app/.env 不该被复制"
 	[ ! -e "$P/web2/notes.txt" ] || fail "工作区已删的文件不该被复制"
 	expect_http http://web2-app-1:4321 node-ok
+	case $("$DP" up web2 2>&1) in
+	*"already exists but was created"*) fail "第二个项目启动时警告共用的 pnpm 卷属于别的项目" ;;
+	*) ok "共用的 pnpm 卷不再警告" ;;
+	esac
+	# 开发服务器一启动就退出、容器反复重启：dp up 要报失败
+	(cd "$P/web2" && docker compose run --rm --no-deps app pnpm pkg set 'scripts.dev=node -e process.exit(1)')
+	"$DP" down web2
+	expect_fail "$DP" up web2
+	ok "开发服务器起不来时 dp up 报失败"
+	cp "$P/web2/compose.yaml" "$WORK/compose.yaml.bak"
+	echo 'services: [' >>"$P/web2/compose.yaml"
+	expect_fail "$DP" up web2
+	case $OUT in *yaml*) ok "compose 文件写错时报出 compose 的错误" ;; *) fail "compose 文件写错时的提示不对：${OUT}" ;; esac
+	cp "$WORK/compose.yaml.bak" "$P/web2/compose.yaml"
+	(cd "$P/web2" && docker compose run --rm --no-deps app pnpm pkg set 'scripts.dev=node server.cjs')
+	"$DP" up web2
 
 	expect_fail "$DP" new node 日本
 	[ ! -e "$P/日本" ] || fail "转不成项目名时不该建目录"
@@ -176,13 +205,24 @@ pg() { docker exec -i postgres sh -c 'psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_U
 
 group_postgres() {
 	"$DP" db new postgres
-	local d=$P/PostgreSQL f fa pw
+	local d=$P/PostgreSQL f fa pw n now
 	pw=$("$DP" db create postgres app app_user | sed -n 's/^ *密码: *//p')
+	case $pw in '' | *[!0-9a-f]*) fail "postgres 生成的密码不是十六进制：${pw}" ;; *) ok "postgres 生成的密码是十六进制，拼进连接串不用转义" ;; esac
 	pg -d app -c "CREATE TABLE t (x int); INSERT INTO t VALUES (1)"
 	"$DP" db users postgres app_user >/dev/null
 
 	"$DP" db backup postgres app
 	f=$(newest "$d"/backups/app_*.sql*)
+	# 这一秒和下一秒的名字都已被占用：备份要另起名字，不覆盖已有的文件。
+	# 先等一秒，占位文件才不会和上面那份备份同名
+	sleep 1
+	now=$(date +%s)
+	echo placeholder >"$d/backups/app_$(stamp_of "$now").sql.gz"
+	echo placeholder >"$d/backups/app_$(stamp_of $((now + 1))).sql.gz"
+	"$DP" db backup postgres app >/dev/null
+	expect_eq "$(cat "$d/backups/app_$(stamp_of "$now").sql.gz" "$d/backups/app_$(stamp_of $((now + 1))).sql.gz" | tr '\n' ' ')" "placeholder placeholder " "同一秒里再备份同一个库不覆盖已有的文件"
+	gzip -t "$(newest "$d"/backups/app_*.sql.gz)" || fail "同一秒里再备份时没有另起名字"
+	rm "$d/backups/app_$(stamp_of "$now").sql.gz" "$d/backups/app_$(stamp_of $((now + 1))).sql.gz"
 	pg -d app -c "UPDATE t SET x = 2"
 	printf 'y\n' | "$DP" db restore postgres "$f"
 	expect_eq "$(pg -d app -c 'SELECT x FROM t')" 1 "单库恢复覆盖已有库"
@@ -190,14 +230,16 @@ group_postgres() {
 
 	"$DP" db backup postgres
 	fa=$(newest "$d"/backups/all_databases_*)
-	pg -d app -c "UPDATE t SET x = 3"
-	printf 'y\n' | "$DP" db restore postgres "$(basename "$fa")" app
-	expect_eq "$(pg -d app -c 'SELECT x FROM t')" 1 "从整库备份里恢复一个库"
+	expect_fail sh -c "printf 'y\n' | '$DP' db restore postgres '$(basename "$fa")' app"
+	case $OUT in *单库备份*) ok "不从整库备份里切出单个库" ;; *) fail "整库备份带库名时的提示不对：${OUT}" ;; esac
 	expect_fail sh -c "printf 'y\n' | '$DP' db restore postgres '$fa'"
 	ok "实例里已有库时拒绝整个导入"
 
 	# 属主被删掉后恢复：先报错，不先删库
+	n=$(($(ls "$d"/backups/app_*.sql.gz | wc -l)))
 	printf 'y\n' | "$DP" db drop postgres app app_user
+	expect_eq "$(($(ls "$d"/backups/app_*.sql.gz | wc -l)))" $((n + 1)) "postgres 删库前留了一份单库备份"
+	gzip -t "$(newest "$d"/backups/app_*.sql.gz)" || fail "删库前的备份不是完整的 gzip"
 	expect_fail sh -c "printf '' | '$DP' db restore postgres '$f'"
 	case $OUT in *属主*) ok "属主不存在时提示" ;; *) fail "没有提示属主：${OUT}" ;; esac
 	pg -d postgres -c "CREATE ROLE app_user LOGIN PASSWORD 'x'"
@@ -206,6 +248,10 @@ group_postgres() {
 
 	# 只剩默认库时可以整个导入
 	printf 'y\n' | "$DP" db drop postgres app app_user
+	pg -d postgres -c "CREATE TABLE leftover (x int)"
+	expect_fail sh -c "printf 'y\n' | '$DP' db restore postgres '$fa'"
+	case $OUT in *已经有表*) ok "默认库里已有表时拒绝整个导入" ;; *) fail "默认库里有表时的提示不对：${OUT}" ;; esac
+	pg -d postgres -c "DROP TABLE leftover"
 	printf 'y\n' | "$DP" db restore postgres "$fa"
 	expect_eq "$(pg -d app -c 'SELECT x FROM t')" 1 "整个导入"
 
@@ -216,7 +262,10 @@ group_postgres() {
 	expect_eq "$(pg -d app -c 'SELECT x FROM t')" 1 "POSTGRES_DB 是要恢复的库时也能恢复"
 	edit 's/^POSTGRES_DB=.*/POSTGRES_DB=postgres/' "$d/.env"
 
+	edit 's|^TZ=.*|TZ=America/New_York|' "$d/.env"
 	"$DP" update PostgreSQL
+	expect_eq "$(pg -d postgres -c 'SHOW timezone')" America/New_York "postgres 时区跟 .env 的 TZ"
+	edit 's|^TZ=.*|TZ=Asia/Tokyo|' "$d/.env"
 	"$DP" db backup all
 
 	# 已有的用户再建库：没给密码时不动它的密码，原来的照样能登录（走 TCP 才校验密码）
@@ -224,18 +273,30 @@ group_postgres() {
 	case $OUT in *密码没有改*) ok "postgres 已有用户再建库时提示密码没改" ;; *) fail "没有提示密码没改：${OUT}" ;; esac
 	expect_eq "$(docker exec postgres psql "host=127.0.0.1 user=app_user dbname=app2 password=${pw}" -Atc 'SELECT 1' 2>&1)" 1 "postgres 已有用户再建库后原密码照样能登录"
 
-	expect_fail sh -c "printf 'y\n' | '$DP' db restore postgres '$fa' postgres"
+	cp "$f" "$d/backups/postgres_20260101_000000.sql.gz"
+	expect_fail sh -c "printf 'y\n' | '$DP' db restore postgres '$d/backups/postgres_20260101_000000.sql.gz'"
+	rm "$d/backups/postgres_20260101_000000.sql.gz"
 	case $OUT in *维护库*) ok "拒绝恢复 postgres 维护库" ;; *) fail "恢复 postgres 库时的提示不对：${OUT}" ;; esac
+
+	# 整库导入中途出错要停下报失败，不能接着导完再说导入完成
+	(cd "$d" && docker compose down && docker volume rm postgres-data >/dev/null && docker volume create postgres-data >/dev/null &&
+		docker compose up -d --wait)
+	gzip -dc "$fa" | awk '/^CREATE TABLE/ && !d { print "SELECT no_such_function();"; d = 1 } { print }' |
+		gzip >"$d/backups/all_databases_20260101_000000.sql.gz"
+	expect_fail sh -c "printf 'y\n' | '$DP' db restore postgres '$d/backups/all_databases_20260101_000000.sql.gz'"
+	case $OUT in *导入完成*) fail "整库导入出错后还报导入完成：${OUT}" ;; *no_such_function*) ok "postgres 整库导入遇到错误就停" ;; *) fail "整库导入出错时的输出不对：${OUT}" ;; esac
+	rm "$d/backups/all_databases_20260101_000000.sql.gz"
 }
 
 # MariaDB、MySQL 的脚本是同一份，按类型换客户端和变量名
 mysqlish() {
-	local type=$1 dir=$2 client=$3 rootvar=$4 d f fa pw
+	local type=$1 dir=$2 client=$3 rootvar=$4 d f fa pw n
 	d=$P/$dir
 	sq() { docker exec -i "$type" sh -c "$client -uroot -p\"\$$rootvar\" -N \"\$@\" 2>/dev/null" sh "$@"; }
 
 	"$DP" db new "$type"
 	pw=$("$DP" db create "$type" app app_user | sed -n 's/^ *密码: *//p')
+	case $pw in '' | *[!0-9a-f]*) fail "$type 生成的密码不是十六进制：${pw}" ;; *) ok "$type 生成的密码是十六进制，拼进连接串不用转义" ;; esac
 	[ -n "$pw" ] || fail "create-db 没打印密码"
 	sq app -e "CREATE TABLE t (x int); INSERT INTO t VALUES (1)"
 	"$DP" db users "$type" app_user >/dev/null
@@ -248,13 +309,15 @@ mysqlish() {
 
 	"$DP" db backup "$type"
 	fa=$(newest "$d"/backups/all_databases_*)
-	sq app -e "UPDATE t SET x = 3"
-	printf 'y\n' | "$DP" db restore "$type" "$fa" app
-	expect_eq "$(sq app -e 'SELECT x FROM t')" 1 "$type 从整库备份里恢复一个库"
+	expect_fail sh -c "printf 'y\n' | '$DP' db restore $type '$fa' app"
+	case $OUT in *单库备份*) ok "$type 不从整库备份里切出单个库" ;; *) fail "整库备份带库名时的提示不对：${OUT}" ;; esac
 	expect_fail sh -c "printf 'y\n' | '$DP' db restore $type '$fa'"
 	ok "$type 实例里已有库时拒绝整个导入"
 
+	n=$(($(ls "$d"/backups/app_*.sql.gz | wc -l)))
 	printf 'y\n' | "$DP" db drop "$type" app app_user
+	expect_eq "$(($(ls "$d"/backups/app_*.sql.gz | wc -l)))" $((n + 1)) "$type 删库前留了一份单库备份"
+	gzip -t "$(newest "$d"/backups/app_*.sql.gz)" || fail "$type 删库前的备份不是完整的 gzip"
 	expect_fail sh -c "printf 'y\n' | '$DP' db restore $type '$f'"
 	ok "$type 库不存在时拒绝单库恢复"
 
@@ -292,6 +355,8 @@ group_mysql() { mysqlish mysql MySQL mysql MYSQL_ROOT_PASSWORD; }
 group_valkey() {
 	"$DP" db new valkey
 	expect_eq "$(docker exec valkey sh -c 'valkey-cli --no-auth-warning -a "$VALKEY_PASSWORD" ping')" PONG "valkey 带密码连接"
+	expect_eq "$(docker exec valkey sh -c 'valkey-cli --no-auth-warning -a "$VALKEY_PASSWORD" config get appendonly maxmemory-policy' | tr '\n' ' ')" \
+		"appendonly yes maxmemory-policy noeviction " "valkey 开着 AOF，不自动删数据"
 }
 
 srv() { docker exec dp-e2e-server sh -c "$1"; }
@@ -306,11 +371,25 @@ push_image() {
 group_remote() {
 	ssh e2e-server true
 
-	local a=$P/pullapp b=$P/pushapp sha1 sha2 bad
+	local a=$P/pullapp b=$P/pushapp sha1 sha2 pv2 bad ino
 	mkdir -p "$a"
 	cp -R "$REPO/templates/deploy/pull/." "$a/"
 	printf 'services:\n  app:\n    image: busybox:1.37\n' >"$a/compose.yaml"
 	edit 's/^name: PROJECT$/name: pullapp/; s#ghcr.io/OWNER/REPO#127.0.0.1:5000/e2e/pullapp#' "$a/deploy/compose.yaml"
+	# 模板 backup.sh 的 db 示例备份名为 postgres 的服务；compose 会自动合并 override
+	cat >"$a/deploy/compose.override.yaml" <<'EOF'
+services:
+  postgres:
+    image: postgres:18-trixie
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_DB: app
+      POSTGRES_PASSWORD: e2e
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      retries: 30
+EOF
 	git -C "$a" init -q
 	git_commit "$a" v1
 	sha1=$(git -C "$a" rev-parse HEAD)
@@ -335,6 +414,8 @@ group_remote() {
 	push_image "$sha1" v1-patched
 	"$DP" patch pullapp
 	expect_http http://pullapp-app-1:8080 v1-patched
+	expect_fail "$DP" patch pullapp extra
+	case $OUT in *多余的参数*) ok "patch 的参数错误照原样报出" ;; *) fail "patch 参数错误时的提示不对：${OUT}" ;; esac
 	# 镜像拉得下来但健康检查不过：自动换回原来的版本，.env 不变
 	bad=1111111111111111111111111111111111111111
 	printf 'FROM busybox:1.37\nHEALTHCHECK --interval=1s --retries=2 CMD false\nCMD ["httpd", "-f", "-p", "8080"]\n' |
@@ -344,63 +425,78 @@ group_remote() {
 	expect_http http://pullapp-app-1:8080 v1-patched
 	expect_eq "$(srv "sed -n 's/^IMAGE_TAG=//p' /srv/pullapp/deploy/.env")" "$sha1" "新版本起不来时退回原来的版本"
 
-	mkdir -p "$b"
+	"$DP" new node pushapp
 	cp -R "$REPO/templates/deploy/push/." "$b/"
-	printf 'services:\n  app:\n    image: busybox:1.37\n' >"$b/compose.yaml"
-	cat >"$b/deploy/compose.yaml" <<'EOF'
-name: pushapp
-services:
-  app:
-    image: busybox:1.37
-    command: ["sh", "-c", "mkdir -p /www && echo v1 > /www/index.html && exec httpd -f -p 8080 -h /www"]
-    networks: [docker-net]
-  postgres:
-    image: postgres:18-trixie
-    environment:
-      POSTGRES_USER: app
-      POSTGRES_DB: app
-      POSTGRES_PASSWORD: ${PG_PASSWORD:?}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d app"]
-      interval: 2s
-      retries: 30
-    networks: [docker-net]
-networks:
-  docker-net:
-    external: true
-    name: docker-net
-EOF
+	mkdir -p "$b/app/site"
+	echo v1 >"$b/app/site/index.html"
+	echo same >"$b/app/site/keep.txt"
+	# 装一次生成 pnpm-lock.yaml，构建段的 COPY 要它
+	(cd "$b" && docker compose run --rm --no-deps app sh -c "pnpm pkg set 'scripts.build=rm -rf out && cp -R site out' && pnpm install >/dev/null")
+	# 值带引号也要认（compose 的写法）
+	printf '%s\n' DEPLOY_MODE=push 'DEPLOY_HOST="e2e-server"' "DEPLOY_DIR='/srv/pushapp'" OUTPUT_DIR=out >>"$b/.env"
 	git -C "$b" init -q
 	git_commit "$b" v1
-	srv "mkdir -p /srv/pushapp && echo PG_PASSWORD=e2e > /srv/pushapp/.env"
-	# 值带引号也要认（compose 的写法）
-	printf '%s\n' COMPOSE_PROJECT_NAME=pushapp DEPLOY_MODE=push 'DEPLOY_HOST="e2e-server"' "DEPLOY_DIR='/srv/pushapp'" >"$b/.env"
+	# 测试服务器以 root 登录、没有 sudo，目录先建好
+	srv "mkdir -p /srv/pushapp"
 
 	"$DP" deploy pushapp
-	expect_http http://pushapp-app-1:8080 v1
-	edit 's/echo v1/echo v2/' "$b/deploy/compose.yaml"
+	# 照 templates/deploy/README.md 的写法托管：挂整个 DEPLOY_DIR，站点根是 current
+	docker run -d --name dp-e2e-static --network docker-net -v dp-e2e-srv:/srv:ro caddy:alpine \
+		caddy file-server --root /srv/pushapp/current --listen :8080 >/dev/null
+	expect_http http://dp-e2e-static:8080/ v1
+	echo v2 >"$b/app/site/index.html"
 	expect_fail "$DP" deploy pushapp
-	ok "deploy/ 有未提交的改动时拒绝"
+	ok "app/ 有未提交的改动时拒绝"
 	git_commit "$b" v2
+	pv2=$(git -C "$b" rev-parse HEAD)
 	"$DP" deploy pushapp
-	expect_http http://pushapp-app-1:8080 v2
-	expect_eq "$(srv 'cat /srv/pushapp/REVISION')" "$(git -C "$b" rev-parse --short HEAD)" "REVISION 记下的版本"
+	expect_http http://dp-e2e-static:8080/ v2
+	expect_eq "$(srv 'readlink /srv/pushapp/current')" "releases/$pv2" "current 指向这次的提交"
+	expect_eq "$(srv 'stat -c %i /srv/pushapp/releases/*/keep.txt | sort -u | wc -l')" 1 "没变的文件和上一版共用硬链接"
+	expect_eq "$(srv 'stat -c %a /srv/pushapp/current/index.html')" 644 "产物文件谁都能读"
 	"$DP" rollback pushapp HEAD~1
-	expect_http http://pushapp-app-1:8080 v1
+	expect_http http://dp-e2e-static:8080/ v1
+	# 回滚到的 v1 按回滚时间算新，再发 4 版后被清掉的是 v2
+	for v in v3 v4 v5 v6; do
+		echo "$v" >"$b/app/site/index.html"
+		git_commit "$b" "$v"
+		"$DP" deploy pushapp >/dev/null
+	done
+	expect_http http://dp-e2e-static:8080/ v6
+	expect_eq "$(srv 'ls /srv/pushapp/releases | wc -l')" 5 "服务器上只留 5 版"
+	expect_fail "$DP" rollback pushapp "$pv2"
+	ok "清理掉的版本不能回滚"
+	echo v7 >"$b/app/site/index.html"
+	git_commit "$b" v7
+	expect_fail "$DP" rollback pushapp HEAD
+	ok "没发布过的版本不能回滚"
+	expect_fail "$DP" patch pushapp
+	ok "推送模式不能 patch"
 
 	"$DP" -y deploy all --host e2e-server
 	expect_http http://pullapp-app-1:8080 v2
-	expect_http http://pushapp-app-1:8080 v2
+	expect_http http://dp-e2e-static:8080/ v7
+	# 同一提交再部署：不往正在用的目录里 rsync，只切换
+	ino=$(srv 'stat -c %i /srv/pushapp/current/index.html')
+	OUT=$("$DP" deploy pushapp)
+	case $OUT in *已有*) ok "同一提交再部署时只切换" ;; *) fail "同一提交再部署时重新构建了：${OUT}" ;; esac
+	expect_eq "$(srv 'stat -c %i /srv/pushapp/current/index.html')" "$ino" "同一提交再部署不改正在用的文件"
+	OUT=$("$DP" -y patch all --host e2e-server)
+	case $OUT in *pushapp*) fail "patch all 处理了推送模式的项目：${OUT}" ;; *pullapp*) ok "patch all 跳过推送模式" ;; *) fail "patch all 没处理 pullapp：${OUT}" ;; esac
 	OUT=$("$DP" remote-status)
-	case $OUT in *pushapp-postgres-1*) ok "remote-status" ;; *) fail "remote-status 里没有 pushapp：${OUT}" ;; esac
+	case $OUT in *pullapp-postgres-1*) ok "remote-status" ;; *) fail "remote-status 里没有 pullapp：${OUT}" ;; esac
 
-	"$DP" backup pushapp
-	[ -s "$(newest "$P"/backup/pushapp/db_*.dump)" ] || fail "没拉回数据库备份"
-	[ -n "$(newest "$P"/backup/pushapp/env_*.tgz)" ] || fail "没拉回 .env 备份"
-	expect_eq "$(mode_of "$(newest "$P"/backup/pushapp/db_*.dump)")" 600 "备份文件只有自己能读"
+	"$DP" backup pullapp
+	[ -s "$(newest "$P"/backup/pullapp/db_*.dump)" ] || fail "没拉回数据库备份"
+	[ -n "$(newest "$P"/backup/pullapp/env_*.tgz)" ] || fail "没拉回 .env 备份"
+	expect_eq "$(mode_of "$(newest "$P"/backup/pullapp/db_*.dump)")" 600 "备份文件只有自己能读"
 	"$DP" backup pullapp env
 	[ -n "$(newest "$P"/backup/pullapp/env_*.tgz)" ] || fail "没拉回 pullapp 的 .env 备份"
 	expect_fail "$DP" backup pullapp 'env;true'
+	expect_fail "$DP" backup pushapp
+	case $OUT in *推送模式*) ok "推送模式的项目提示不用备份" ;; *) fail "推送模式备份时的提示不对：${OUT}" ;; esac
+	expect_fail "$DP" remote-status --host
+	ok "remote-status 的 --host 缺值时报错"
 
 	expect_fail "$DP" deploy pullapp --host
 	case $OUT in *ssh\ 别名*) ok "--host 缺值时提示" ;; *) fail "--host 缺值没有提示：${OUT}" ;; esac

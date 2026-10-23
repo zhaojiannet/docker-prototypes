@@ -34,7 +34,7 @@ docker compose exec app go get -tool <工具>@latest   # sqlc 这类工具登记
 docker compose exec app bash
 ```
 
-服务监听 `0.0.0.0:8080`，浏览器打开 `https://<COMPOSE_PROJECT_NAME>.orb.local`。用别的端口就改 `compose.yaml` 的 `dev.orbstack.http-port` 和 `compose.ports.yaml` 冒号右边。要 `localhost` 加端口时，在 `.env` 里打开 `COMPOSE_FILE` 和 `APP_PORT` 两行。
+服务监听 `0.0.0.0:8080`，浏览器打开 `https://<COMPOSE_PROJECT_NAME>.orb.local`。用别的端口就改 `compose.yaml` 的 `dev.orbstack.http-port` 和 `healthcheck` 里的 `8080`。
 
 ## 东西放哪
 
@@ -43,7 +43,9 @@ docker compose exec app bash
 | 源码 | `./app`，挂到容器 `/app` |
 | 模块缓存、编译缓存 | 所有 Go 项目共用的 volume `go-mod`、`go-build` |
 
-`docker compose down -v` 会连共用的两个缓存一起删，下次构建重新下载。
+这两个卷标了 `external`，`docker compose down -v` 不删它们。
+
+这两个卷和 `docker-net` 网络由 `dp` 在启动前建好。不用 `dp`、直接 `docker compose up` 时，第一次先运行 `docker volume create go-mod`、`docker volume create go-build` 和 `docker network create docker-net`。
 
 ## 连数据库
 
@@ -59,7 +61,7 @@ DATABASE_URL=postgresql://my_svc:密码@postgres:5432/my_svc
 
 `Dockerfile` 有三段：`dev` 是开发容器，`build` 静态编译 `./cmd/...`，`runtime` 是 distroless，二进制在 `/usr/local/bin/`。distroless 里没有 shell，健康检查要由程序自己提供子命令。
 
-部署到自建服务器见仓库的 `templates/deploy/README.md`。
+部署到自建服务器见 docker-prototypes 仓库的 `templates/deploy/README.md`。
 
 ## 依赖更新
 

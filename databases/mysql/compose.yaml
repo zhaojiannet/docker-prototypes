@@ -25,7 +25,8 @@ services:
     healthcheck:
       # 不带认证：连得上就说明服务活着，mysqladmin 此时返回 Access denied 但退出码是 0。
       # 带 -p 会让密码明文出现在 docker inspect 的容器元数据里。
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # 走 TCP：首次初始化时镜像先起一个只听 socket 的临时服务，走 socket 会在初始化完成前就报健康
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1"]
       start_period: 60s
       interval: 10s
       timeout: 5s

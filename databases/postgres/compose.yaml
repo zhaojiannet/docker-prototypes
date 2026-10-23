@@ -13,8 +13,6 @@ services:
       # 只在数据卷第一次初始化时生效，跟 create-db.sh 建库用同一套排序规则
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=builtin --builtin-locale=PG_UNICODE_FAST --locale=C.UTF-8"
       LANG: C.UTF-8
-      # PG18 的数据目录换了层级，显式指定避免用错
-      PGDATA: /var/lib/postgresql/18/docker
 
     # 只绑本机：不加 127.0.0.1 会监听 0.0.0.0，同网段任何机器都能连进来。
     # 容器之间走 docker-net 用服务名互连，不经过这里的端口映射，不受影响。
@@ -24,10 +22,10 @@ services:
     volumes:
       - data:/var/lib/postgresql
       - ./conf/postgresql.conf:/etc/postgresql/postgresql.conf:ro
-      - ./init-scripts:/docker-entrypoint-initdb.d:ro
       - ./backups:/backups
 
-    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf"]
+    # PostgreSQL 不读 TZ 环境变量，时区要用参数给，否则是 GMT
+    command: ["postgres", "-c", "config_file=/etc/postgresql/postgresql.conf", "-c", "timezone=${TZ:-Asia/Tokyo}", "-c", "log_timezone=${TZ:-Asia/Tokyo}"]
 
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]

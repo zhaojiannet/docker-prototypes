@@ -7,11 +7,18 @@ services:
     restart: unless-stopped
     environment:
       TZ: ${TZ:-Asia/Tokyo}
-    # OrbStack 下用 https://<项目名>.orb.local 访问，不占宿主机端口。
-    # 要 localhost 加端口时在 .env 里启用 COMPOSE_FILE，合并 compose.ports.yaml
+    # OrbStack 下用 https://<项目名>.orb.local 访问，不占宿主机端口
     labels:
       - dev.orbstack.domains=${COMPOSE_PROJECT_NAME}.orb.local
       - dev.orbstack.http-port=8080
+    # 开发服务器连得上才算启动成功：dp up、update 等它，起不来时报失败，不把反复重启当成正常。
+    # start_period 给首次下载模块、编译留时间，这期间每 2 秒查一次，连上就算好
+    healthcheck:
+      test: ["CMD", "bash", "-c", "</dev/tcp/127.0.0.1/8080"]
+      start_period: 10m
+      start_interval: 2s
+      interval: 30s
+      retries: 3
     volumes:
       - ./app:/app
       - go-mod:/go/pkg/mod
@@ -20,10 +27,12 @@ services:
       - docker-net
 
 volumes:
-  # 所有 Go 项目共用：模块只下载一次，编译缓存跨项目命中
+  # 所有 Go 项目共用：模块只下载一次，编译缓存跨项目命中。external：dp 启动前会建好
   go-mod:
+    external: true
     name: go-mod
   go-build:
+    external: true
     name: go-build
 
 networks:

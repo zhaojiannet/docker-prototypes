@@ -10,7 +10,7 @@ MariaDB 12.3 开发环境，镜像标签 `mariadb:12.3`，12.3 是长期支持�
 
 ```bash
 cp .env.example .env
-# 改 .env 里的两个密码，可以用 openssl rand -base64 24 生成
+# 改 .env 里的两个密码，可以用 openssl rand -hex 24 生成
 docker network inspect docker-net >/dev/null 2>&1 || docker network create docker-net   # 只在本机第一次需要
 docker volume create mariadb-data     # 只在第一次需要，卷已存在时什么也不做
 docker compose up -d --wait

@@ -1,34 +1,5 @@
 version: 2
 updates:
-  # images/ 下的镜像都是 Docker 官方发布的，出安全修复版要尽快跟上，不设冷却期，每天检查；
-  # 不写 cooldown 时 Dependabot 默认冷却 3 天，所以要用 exclude 显式排除
-  - package-ecosystem: docker
-    directories:
-      - /images/node
-      - /images/go
-    schedule:
-      interval: daily
-      timezone: Asia/Tokyo
-    cooldown:
-      exclude: ["*"]
-    ignore:
-      # Node 只跟当前长期支持版，换大版本时改这里
-      - dependency-name: node
-        update-types: ["version-update:semver-major"]
-
-  # images/node/package.json 只登记镜像里装的 pnpm 版本
-  - package-ecosystem: npm
-    directory: /images/node
-    schedule:
-      interval: weekly
-      timezone: Asia/Tokyo
-    cooldown:
-      default-days: 3
-    ignore:
-      # pnpm 只跟当前大版本，换大版本时改这里
-      - dependency-name: pnpm
-        update-types: ["version-update:semver-major"]
-
   - package-ecosystem: github-actions
     directory: /
     schedule:
